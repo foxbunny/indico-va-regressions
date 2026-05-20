@@ -1,0 +1,75 @@
+# Self-contained docker stack for the visual & accessibility regression suite.
+# Run via ../visual-regression.sh — do not invoke `docker compose` directly
+# unless you know what you're doing.
+
+services:
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: indico_visual
+      POSTGRES_USER: indico
+      POSTGRES_PASSWORD: indico
+      POSTGRES_HOST_AUTH_METHOD: trust
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U indico -d indico_visual"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  indico:
+    build:
+      context: ${INDICO_SRC:-../../indico}
+      # Absolute path — relative paths in `dockerfile:` resolve against the
+      # build context (Indico's source root), which can't see our repo.
+      dockerfile: ${INDICO_REGRESSIONS_DOCKERFILE:?set INDICO_REGRESSIONS_DOCKERFILE}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - PGPASSWORD=indico
+      - INDICO_CONFIG=/regressions/docker/indico-visual.conf
+      - INDICO_VISUAL_FROZEN_TIME=2026-06-15T12:00:00+00:00
+      - PYTHONPATH=/regressions
+    volumes:
+      - ${INDICO_SRC:-../../indico}:/home/indico/src:rw
+      - ..:/regressions:rw
+    ports:
+      - "8003:8000"
+    entrypoint: ["/regressions/docker/entrypoint-indico.sh"]
+    healthcheck:
+      # Indico's canonicalize_url middleware rejects requests whose Host header
+      # doesn't match BASE_URL, so we hit the service name (which matches).
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "--max-time", "2", "http://indico:8000/"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+      start_period: 60s
+
+  runner:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.runner
+    depends_on:
+      indico:
+        condition: service_healthy
+    environment:
+      - BASE_URL=http://indico:8000
+      - FROZEN_TIME=2026-06-15T12:00:00+00:00
+    volumes:
+      - ..:/regressions:rw
+    working_dir: /regressions/runner
+    entrypoint: ["/regressions/docker/entrypoint-runner.sh"]
+    command: []
+    profiles: ["run"]

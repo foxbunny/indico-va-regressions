@@ -1,0 +1,27 @@
+{
+  "anonymous": {
+    "label": "Anonymous visitor",
+    "login": null
+  },
+  "participant": {
+    "label": "Registered participant",
+    "login": {
+      "email": "participant@example.test",
+      "password": "VisualRegressionPart42"
+    }
+  },
+  "manager": {
+    "label": "Event manager",
+    "login": {
+      "email": "manager@example.test",
+      "password": "VisualRegressionMgr42"
+    }
+  },
+  "admin": {
+    "label": "Server admin",
+    "login": {
+      "email": "admin@example.test",
+      "password": "VisualRegressionAdm42"
+    }
+  }
+}

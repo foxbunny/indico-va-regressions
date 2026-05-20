@@ -1,0 +1,25 @@
+{
+  "name": "indico-visual-regression-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "run": "tsx runner.ts"
+  },
+  "dependencies": {
+    "@playwright/test": "1.59.1",
+    "better-sqlite3": "^11.5.0",
+    "diff": "^7.0.0",
+    "pixelmatch": "^6.0.0",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/diff": "^7.0.0",
+    "@types/node": "^22.10.0",
+    "@types/pixelmatch": "^5.2.6",
+    "@types/pngjs": "^6.0.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

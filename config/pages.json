@@ -1,0 +1,105 @@
+[
+  {
+    "id": "home",
+    "module": "core",
+    "path": "/",
+    "personas": ["anonymous", "participant", "manager", "admin"]
+  },
+  {
+    "id": "auth-login",
+    "module": "auth",
+    "path": "/login/",
+    "personas": ["anonymous"]
+  },
+  {
+    "id": "auth-register",
+    "module": "auth",
+    "path": "/register/",
+    "personas": ["anonymous"],
+    "mask": ["#captcha"]
+  },
+  {
+    "id": "user-dashboard",
+    "module": "users",
+    "path": "/user/dashboard/",
+    "personas": ["participant", "manager", "admin"]
+  },
+  {
+    "id": "user-profile",
+    "module": "users",
+    "path": "/user/profile/",
+    "personas": ["participant", "manager", "admin"]
+  },
+  {
+    "id": "user-preferences",
+    "module": "users",
+    "path": "/user/preferences/",
+    "personas": ["participant", "manager", "admin"]
+  },
+  {
+    "id": "category-root-display",
+    "module": "categories",
+    "path": "/",
+    "personas": ["anonymous", "admin"]
+  },
+  {
+    "id": "category-child-display",
+    "module": "categories",
+    "path": "/category/{childCategoryId}/",
+    "personas": ["anonymous", "admin"]
+  },
+  {
+    "id": "event-lecture-display",
+    "module": "events",
+    "path": "/event/{lectureEventId}/",
+    "personas": ["anonymous", "manager", "admin"]
+  },
+  {
+    "id": "event-meeting-display",
+    "module": "events",
+    "path": "/event/{meetingEventId}/",
+    "personas": ["anonymous", "manager", "admin"]
+  },
+  {
+    "id": "event-conference-display",
+    "module": "events",
+    "path": "/event/{conferenceEventId}/",
+    "personas": ["anonymous", "participant", "manager", "admin"]
+  },
+  {
+    "id": "event-conference-contributions",
+    "module": "events",
+    "path": "/event/{conferenceEventId}/contributions/",
+    "personas": ["anonymous", "manager"]
+  },
+  {
+    "id": "event-conference-timetable",
+    "module": "events",
+    "path": "/event/{conferenceEventId}/timetable/",
+    "personas": ["anonymous", "manager"]
+  },
+  {
+    "id": "event-conference-manage",
+    "module": "events",
+    "path": "/event/{conferenceEventId}/manage/",
+    "personas": ["manager", "admin"]
+  },
+  {
+    "id": "search",
+    "module": "search",
+    "path": "/search/?q=conference",
+    "personas": ["anonymous", "admin"]
+  },
+  {
+    "id": "admin-dashboard",
+    "module": "admin",
+    "path": "/admin/",
+    "personas": ["admin"]
+  },
+  {
+    "id": "admin-users",
+    "module": "admin",
+    "path": "/admin/users/",
+    "personas": ["admin"]
+  }
+]

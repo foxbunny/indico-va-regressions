@@ -1,0 +1,20 @@
+# Playwright image with our runner's npm dependencies pre-installed.
+# Built once; rebuild when runner/package.json changes.
+FROM mcr.microsoft.com/playwright:v1.59.1-jammy
+
+WORKDIR /opt/runner
+
+# better-sqlite3 needs to build from source against Node 24 in this image (no
+# prebuilt binary available). Install the toolchain it needs.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 make g++ \
+ && rm -rf /var/lib/apt/lists/*
+
+# Install runner deps into a shared location so the bind-mount of /regressions
+# at runtime doesn't shadow them. Build context is the project root.
+COPY runner/package.json runner/package-lock.json* ./
+RUN npm install --no-audit --no-fund
+
+# Symlink node_modules into the bind-mounted runner dir on container start;
+# see entrypoint-runner.sh.
+ENV RUNNER_NODE_MODULES=/opt/runner/node_modules

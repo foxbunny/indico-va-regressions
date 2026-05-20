@@ -1,0 +1,53 @@
+# Indico image for the visual regression suite.
+#
+# Forked from the upstream `Dockerfile` in the Indico repo because that
+# Dockerfile relies on `libpcre3-dev`, which is no longer in Debian trixie
+# (the current python:3.12-slim base). This file pins to bookworm where the
+# package still exists. Build context is the Indico source root (set in
+# docker-compose.yml as `context: ${INDICO_SRC}`).
+
+FROM python:3.12-slim-bookworm
+
+RUN apt-get update && apt-get install -y --install-recommends \
+    build-essential \
+    libxslt1-dev \
+    libxml2-dev \
+    libffi-dev \
+    libpcre3-dev \
+    libyaml-dev \
+    libpq-dev \
+    libpango1.0-dev \
+    libjpeg-dev \
+    zlib1g-dev \
+    git \
+    curl \
+    postgresql-client \
+    libjpeg62-turbo-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -s /bin/bash indico
+WORKDIR /home/indico
+
+RUN mkdir -p data/cache data/tmp data/log data/archive \
+ && chown -R indico:indico data
+
+USER indico
+COPY --chown=indico:indico . src/
+
+WORKDIR /home/indico/src
+RUN pip install --user --no-cache-dir -U pip setuptools wheel \
+ && pip install --user --no-cache-dir -e '.[dev]'
+
+RUN npm ci
+
+ENV PATH="/home/indico/.local/bin:${PATH}"
+ENV PGPASSWORD=indico
+
+EXPOSE 8000
+
+# No ENTRYPOINT/CMD here — docker-compose.yml supplies them via
+# /regressions/docker/entrypoint-indico.sh.
