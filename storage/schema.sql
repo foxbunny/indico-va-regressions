@@ -1,39 +1,48 @@
 -- Two-table model per modality:
 --   *_baselines  — append-only history; the row with the largest id for a
---                  given (page_id, persona) is "the current baseline".
---   *_diffs      — one row per (page_id, persona) when the latest proposal
---                  does NOT match the current baseline. The absence of a row
---                  means "the baseline still holds; nothing to act on".
+--                  given key is "the current baseline".
+--   *_diffs      — one row per key when the latest proposal does NOT match
+--                  the current baseline. The absence of a row means "the
+--                  baseline still holds; nothing to act on".
+--
+-- Visual uses key (page_id, persona, browser) — each browser keeps its own
+-- baseline chain because pixel output differs across engines.
+-- A11y uses key (page_id, persona) — captured only in chromium (firefox has
+-- no CDP-equivalent AT-tree endpoint).
 --
 -- Accept = INSERT a new baseline row + DELETE the diff row.
--- Reset  = DELETE every baseline row for that (page_id, persona). The next
---          run's diff row records status='new' (no baseline).
+-- Reset  = DELETE every baseline row for that key. The next run's diff row
+--          records status='new' (no baseline).
 -- "Reject" isn't an action — not acting on a diff IS the reject.
 
 CREATE TABLE IF NOT EXISTS visual_baselines (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     page_id      TEXT NOT NULL,
     persona      TEXT NOT NULL,
+    browser      TEXT NOT NULL DEFAULT 'chromium',
     image        BLOB NOT NULL,
     width        INTEGER NOT NULL,
     height       INTEGER NOT NULL,
     captured_at  TEXT NOT NULL,
-    -- Delta against the previous baseline in this (page, persona) history.
-    -- Populated at accept time from the now-promoted visual_diffs row, so
-    -- each baseline carries the change that produced it. NULL for the first
-    -- baseline in a chain (and for rows accepted before this column existed).
+    -- Delta against the previous baseline in this (page, persona, browser)
+    -- history. Populated at accept time from the now-promoted visual_diffs
+    -- row, so each baseline carries the change that produced it. NULL for the
+    -- first baseline in a chain (and for rows accepted before this column
+    -- existed).
     prev_baseline_id  INTEGER REFERENCES visual_baselines(id) ON DELETE SET NULL,
     diff_image   BLOB,
     pixel_count  INTEGER NOT NULL DEFAULT 0,
     pixel_pct    REAL NOT NULL DEFAULT 0.0
 );
 
-CREATE INDEX IF NOT EXISTS idx_visual_baselines_pp
-    ON visual_baselines(page_id, persona, id DESC);
+-- The (page_id, persona, browser, id DESC) index is created by _migrate after
+-- the browser column has been added (existing DBs may be missing it when this
+-- file runs).
 
 CREATE TABLE IF NOT EXISTS visual_diffs (
     page_id      TEXT NOT NULL,
     persona      TEXT NOT NULL,
+    browser      TEXT NOT NULL DEFAULT 'chromium',
     baseline_id  INTEGER REFERENCES visual_baselines(id) ON DELETE SET NULL,
     image        BLOB NOT NULL,
     width        INTEGER NOT NULL,
@@ -42,7 +51,7 @@ CREATE TABLE IF NOT EXISTS visual_diffs (
     pixel_count  INTEGER NOT NULL DEFAULT 0,
     pixel_pct    REAL NOT NULL DEFAULT 0.0,
     captured_at  TEXT NOT NULL,
-    PRIMARY KEY (page_id, persona)
+    PRIMARY KEY (page_id, persona, browser)
 );
 
 CREATE TABLE IF NOT EXISTS a11y_baselines (

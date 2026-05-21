@@ -56,13 +56,14 @@ export function finishRunLog(
 export function getCurrentVisualBaseline(
   db: Database.Database,
   pageId: string,
-  persona: string
+  persona: string,
+  browser: string,
 ): {id: number; image: Buffer; width: number; height: number} | null {
   const row = db.prepare(`
     SELECT id, image, width, height FROM visual_baselines
-    WHERE page_id = ? AND persona = ?
+    WHERE page_id = ? AND persona = ? AND browser = ?
     ORDER BY id DESC LIMIT 1
-  `).get(pageId, persona) as {id: number; image: Buffer; width: number; height: number} | undefined;
+  `).get(pageId, persona, browser) as {id: number; image: Buffer; width: number; height: number} | undefined;
   return row ?? null;
 }
 
@@ -71,6 +72,7 @@ export function upsertVisualDiff(
   args: {
     pageId: string;
     persona: string;
+    browser: string;
     baselineId: number | null;
     image: Buffer;
     width: number;
@@ -81,10 +83,10 @@ export function upsertVisualDiff(
   }
 ): void {
   db.prepare(`
-    INSERT INTO visual_diffs (page_id, persona, baseline_id, image, width, height,
+    INSERT INTO visual_diffs (page_id, persona, browser, baseline_id, image, width, height,
                               diff_image, pixel_count, pixel_pct, captured_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(page_id, persona) DO UPDATE SET
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(page_id, persona, browser) DO UPDATE SET
       baseline_id = excluded.baseline_id,
       image       = excluded.image,
       width       = excluded.width,
@@ -94,15 +96,21 @@ export function upsertVisualDiff(
       pixel_pct   = excluded.pixel_pct,
       captured_at = excluded.captured_at
   `).run(
-    args.pageId, args.persona, args.baselineId,
+    args.pageId, args.persona, args.browser, args.baselineId,
     args.image, args.width, args.height,
     args.diffImage, args.pixelCount, args.pixelPct, nowIso(),
   );
 }
 
-export function clearVisualDiff(db: Database.Database, pageId: string, persona: string): boolean {
-  const r = db.prepare('DELETE FROM visual_diffs WHERE page_id = ? AND persona = ?')
-    .run(pageId, persona);
+export function clearVisualDiff(
+  db: Database.Database,
+  pageId: string,
+  persona: string,
+  browser: string,
+): boolean {
+  const r = db.prepare(
+    'DELETE FROM visual_diffs WHERE page_id = ? AND persona = ? AND browser = ?'
+  ).run(pageId, persona, browser);
   return r.changes > 0;
 }
 

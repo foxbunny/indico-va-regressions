@@ -1,4 +1,4 @@
-import {chromium, Page} from '@playwright/test';
+import {Browser, BrowserType, chromium, firefox, Page} from '@playwright/test';
 import {execSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
@@ -75,10 +75,35 @@ function parseCli() {
       'page': {type: 'string'},
       'only-visual': {type: 'boolean', default: false},
       'only-a11y': {type: 'boolean', default: false},
+      // Comma-separated browser list. A11y is captured in chromium only,
+      // regardless of this flag — firefox has no CDP-equivalent AT-tree.
+      'browser': {type: 'string', default: 'chromium,firefox'},
     },
     strict: false,
   });
   return values;
+}
+
+const BROWSER_ENGINES: Record<string, BrowserType> = {chromium, firefox};
+
+function parseBrowsers(raw: string): string[] {
+  const list = raw.split(',').map(s => s.trim()).filter(Boolean);
+  for (const name of list) {
+    if (!(name in BROWSER_ENGINES)) {
+      throw new Error(`Unknown browser '${name}'. Supported: ${Object.keys(BROWSER_ENGINES).join(', ')}`);
+    }
+  }
+  if (list.length === 0) throw new Error('--browser cannot be empty');
+  return list;
+}
+
+function launchArgs(browserName: string): string[] {
+  // Chromium-specific knobs only. Firefox renders fonts via its own pipeline,
+  // and --disable-blink-features is meaningless to non-Blink engines.
+  if (browserName === 'chromium') {
+    return ['--font-render-hinting=none', '--disable-blink-features=AutomationControlled'];
+  }
+  return [];
 }
 
 // --- a11y tree capture via CDP (Playwright 1.59 removed page.accessibility) ---
@@ -140,8 +165,9 @@ async function captureA11yTree(page: Page): Promise<any> {
 
 async function capture(
   page: Page,
-  pageEntry: PageEntry
-): Promise<{image: Buffer; width: number; height: number; tree: any}> {
+  pageEntry: PageEntry,
+  withA11y: boolean,
+): Promise<{image: Buffer; width: number; height: number; tree: any | undefined}> {
   await waitForStable(page);
   const mask = (pageEntry.mask ?? []).map(sel => page.locator(sel));
   const image = await page.screenshot({
@@ -150,7 +176,9 @@ async function capture(
     maskColor: '#ff00ff',
   });
   const {width, height} = parsePngDimensions(image);
-  const tree = await captureA11yTree(page);
+  // captureA11yTree uses CDP, which is chromium-only. Callers gate withA11y
+  // accordingly — firefox / webkit should always pass false.
+  const tree = withA11y ? await captureA11yTree(page) : undefined;
   return {image, width, height, tree};
 }
 
@@ -168,6 +196,7 @@ async function main() {
   const filterPage = args.page ? String(args.page) : null;
   const onlyVisual = Boolean(args['only-visual']);
   const onlyA11y = Boolean(args['only-a11y']);
+  const browsers = parseBrowsers(String(args.browser));
 
   const personas: Personas = loadPersonas();
   const pages = loadPages();
@@ -175,114 +204,130 @@ async function main() {
 
   const db = openDb();
   const filterRepr = JSON.stringify({
-    filter: filterModule, persona: filterPersona, page: filterPage, onlyVisual, onlyA11y,
+    filter: filterModule, persona: filterPersona, page: filterPage,
+    onlyVisual, onlyA11y, browsers,
   });
   const git = gitInfo();
   const runLog = startRunLog(db, {filter: filterRepr, gitHead: git.head, gitDirty: git.dirty});
-  console.log(`[runner] starting (base=${baseUrl})`);
+  console.log(`[runner] starting (base=${baseUrl}, browsers=${browsers.join(',')})`);
 
   console.log('[runner] logging in personas...');
   const storageStates = await buildStorageStates(baseUrl, personas);
-
-  const browser = await chromium.launch({
-    args: ['--font-render-hinting=none', '--disable-blink-features=AutomationControlled'],
-  });
 
   const counts = {
     newVisual: 0, changedVisual: 0, clearedVisual: 0,
     newA11y:   0, changedA11y:   0, clearedA11y:   0,
   };
 
-  try {
-    for (const personaName of Object.keys(personas)) {
-      if (filterPersona && filterPersona !== personaName) continue;
-      const personaPages = pages.filter(p => p.personas.includes(personaName));
-      if (personaPages.length === 0) continue;
-      const ctx = await newPersonaContext(browser, baseUrl, storageStates[personaName]);
-      const page = await ctx.newPage();
-      await installStabilizers(page, frozen);
+  for (const browserName of browsers) {
+    // A11y is captured in chromium only — firefox has no CDP-equivalent for
+    // Accessibility.getFullAXTree, so trying to run a11y-only against firefox
+    // would do nothing. Visual works in both.
+    const doA11yForBrowser = browserName === 'chromium' && !onlyVisual;
+    const doVisualForBrowser = !onlyA11y;
+    if (!doA11yForBrowser && !doVisualForBrowser) {
+      console.log(`[runner] skipping ${browserName}: nothing to capture (--only-a11y on a non-chromium engine)`);
+      continue;
+    }
 
-      for (const entry of personaPages) {
-        if (filterModule && filterModule !== entry.module) continue;
-        if (filterPage && filterPage !== entry.id) continue;
-        const url = baseUrl + resolvePath(entry.path, manifest);
-        const captureKinds = entry.capture ?? ['visual', 'a11y'];
-        const doVisual = captureKinds.includes('visual') && !onlyA11y;
-        const doA11y = captureKinds.includes('a11y') && !onlyVisual;
+    console.log(`[runner] === ${browserName} ===`);
+    const browser: Browser = await BROWSER_ENGINES[browserName].launch({
+      args: launchArgs(browserName),
+    });
 
-        console.log(`[runner] ${personaName} ${entry.id} -> ${url}`);
-        try {
-          await page.goto(url, {waitUntil: 'domcontentloaded', timeout: 30_000});
-        } catch (err) {
-          console.error(`  navigate failed: ${String(err)}`);
-          continue;
-        }
+    try {
+      for (const personaName of Object.keys(personas)) {
+        if (filterPersona && filterPersona !== personaName) continue;
+        const personaPages = pages.filter(p => p.personas.includes(personaName));
+        if (personaPages.length === 0) continue;
+        const ctx = await newPersonaContext(browser, baseUrl, storageStates[personaName]);
+        const page = await ctx.newPage();
+        await installStabilizers(page, frozen);
 
-        const captured = await capture(page, entry);
+        for (const entry of personaPages) {
+          if (filterModule && filterModule !== entry.module) continue;
+          if (filterPage && filterPage !== entry.id) continue;
+          const url = baseUrl + resolvePath(entry.path, manifest);
+          const captureKinds = entry.capture ?? ['visual', 'a11y'];
+          const doVisual = captureKinds.includes('visual') && doVisualForBrowser;
+          const doA11y = captureKinds.includes('a11y') && doA11yForBrowser;
+          if (!doVisual && !doA11y) continue;
 
-        if (doVisual) {
-          const baseline = getCurrentVisualBaseline(db, entry.id, personaName);
-          if (!baseline) {
-            upsertVisualDiff(db, {
-              pageId: entry.id, persona: personaName,
-              baselineId: null,
-              image: captured.image, width: captured.width, height: captured.height,
-              diffImage: null, pixelCount: 0, pixelPct: 0,
-            });
-            counts.newVisual += 1;
-          } else {
-            const cmp = compareImages(baseline.image, captured.image);
-            if (cmp.unchanged) {
-              if (clearVisualDiff(db, entry.id, personaName)) counts.clearedVisual += 1;
-            } else {
+          console.log(`[runner] [${browserName}] ${personaName} ${entry.id} -> ${url}`);
+          try {
+            await page.goto(url, {waitUntil: 'domcontentloaded', timeout: 30_000});
+          } catch (err) {
+            console.error(`  navigate failed: ${String(err)}`);
+            continue;
+          }
+
+          const captured = await capture(page, entry, doA11y);
+
+          if (doVisual) {
+            const baseline = getCurrentVisualBaseline(db, entry.id, personaName, browserName);
+            if (!baseline) {
               upsertVisualDiff(db, {
-                pageId: entry.id, persona: personaName,
-                baselineId: baseline.id,
+                pageId: entry.id, persona: personaName, browser: browserName,
+                baselineId: null,
                 image: captured.image, width: captured.width, height: captured.height,
-                diffImage: cmp.diffImage, pixelCount: cmp.pixelCount, pixelPct: cmp.pixelPct,
+                diffImage: null, pixelCount: 0, pixelPct: 0,
               });
-              counts.changedVisual += 1;
+              counts.newVisual += 1;
+            } else {
+              const cmp = compareImages(baseline.image, captured.image);
+              if (cmp.unchanged) {
+                if (clearVisualDiff(db, entry.id, personaName, browserName)) counts.clearedVisual += 1;
+              } else {
+                upsertVisualDiff(db, {
+                  pageId: entry.id, persona: personaName, browser: browserName,
+                  baselineId: baseline.id,
+                  image: captured.image, width: captured.width, height: captured.height,
+                  diffImage: cmp.diffImage, pixelCount: cmp.pixelCount, pixelPct: cmp.pixelPct,
+                });
+                counts.changedVisual += 1;
+              }
             }
           }
-        }
 
-        if (doA11y) {
-          const treeJson = canonicalize(captured.tree);
-          const treeOutline = outline(captured.tree);
-          const nodeCount = countNodes(captured.tree);
-          const baseline = getCurrentA11yBaseline(db, entry.id, personaName);
-          if (!baseline) {
-            upsertA11yDiff(db, {
-              pageId: entry.id, persona: personaName,
-              baselineId: null,
-              treeJson, outline: treeOutline, nodeCount,
-              diffText: null, addedCount: 0, removedCount: 0,
-            });
-            counts.newA11y += 1;
-          } else {
-            const cmp = compareTrees(baseline.tree_json, treeJson);
-            if (cmp.unchanged) {
-              if (clearA11yDiff(db, entry.id, personaName)) counts.clearedA11y += 1;
-            } else {
+          if (doA11y && captured.tree !== undefined) {
+            const treeJson = canonicalize(captured.tree);
+            const treeOutline = outline(captured.tree);
+            const nodeCount = countNodes(captured.tree);
+            const baseline = getCurrentA11yBaseline(db, entry.id, personaName);
+            if (!baseline) {
               upsertA11yDiff(db, {
                 pageId: entry.id, persona: personaName,
-                baselineId: baseline.id,
+                baselineId: null,
                 treeJson, outline: treeOutline, nodeCount,
-                diffText: cmp.diffText, addedCount: cmp.added, removedCount: cmp.removed,
+                diffText: null, addedCount: 0, removedCount: 0,
               });
-              counts.changedA11y += 1;
+              counts.newA11y += 1;
+            } else {
+              const cmp = compareTrees(baseline.tree_json, treeJson);
+              if (cmp.unchanged) {
+                if (clearA11yDiff(db, entry.id, personaName)) counts.clearedA11y += 1;
+              } else {
+                upsertA11yDiff(db, {
+                  pageId: entry.id, persona: personaName,
+                  baselineId: baseline.id,
+                  treeJson, outline: treeOutline, nodeCount,
+                  diffText: cmp.diffText, addedCount: cmp.added, removedCount: cmp.removed,
+                });
+                counts.changedA11y += 1;
+              }
             }
           }
         }
-      }
 
-      await ctx.close();
+        await ctx.close();
+      }
+    } finally {
+      await browser.close();
     }
-  } finally {
-    await browser.close();
-    finishRunLog(db, runLog.id, counts);
-    db.close();
   }
+
+  finishRunLog(db, runLog.id, counts);
+  db.close();
 
   console.log('[runner] summary:');
   console.log(`  visual: ${counts.changedVisual} changed, ${counts.newVisual} new, ${counts.clearedVisual} cleared`);

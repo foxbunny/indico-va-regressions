@@ -96,6 +96,18 @@ a {
 .change-chip.change-visual.change-changed { color: #c62828; }
 .change-chip.change-a11y { color: #0d47a1; }
 
+.browser-tag {
+  display: inline-block;
+  padding: 0 0.35rem;
+  border-radius: 3px;
+  background: #eceff1;
+  color: #37474f;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: lowercase;
+}
+
 .icon-link {
   display: inline-flex;
   align-items: center;

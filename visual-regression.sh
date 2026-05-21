@@ -14,7 +14,10 @@
 #
 # Default-subcommand flags forwarded to the runner:
 #   --filter <module>, --persona <name>, --page <id>,
-#   --only-visual, --only-a11y
+#   --only-visual, --only-a11y,
+#   --browser <list>   comma-separated; default 'chromium,firefox'.
+#                      A11y is captured in chromium only regardless of this flag
+#                      (firefox has no CDP-equivalent for the AT tree).
 #
 # Environment:
 #   INDICO_SRC       path to the Indico source checkout (default: ../indico)
@@ -96,7 +99,7 @@ cmd_default() {
   local runner_args=()
   while (( $# > 0 )); do
     case "$1" in
-      --filter|--persona|--page)
+      --filter|--persona|--page|--browser)
         runner_args+=("$1" "$2"); shift ;;
       --only-visual|--only-a11y)
         runner_args+=("$1") ;;

@@ -1,9 +1,12 @@
 """SQLite helpers — two-table model.
 
 Model:
-  *_baselines : append-only history (largest id per page+persona = current)
-  *_diffs     : one row per page+persona when the proposal differs from the
-                current baseline. No row means "no diff; baseline still holds".
+  *_baselines : append-only history (largest id per key = current)
+  *_diffs     : one row per key when the proposal differs from the current
+                baseline. No row means "no diff; baseline still holds".
+
+Visual uses (page_id, persona, browser) — each browser has its own chain.
+A11y uses (page_id, persona) — captured in chromium only.
 
 Used by the seed orchestrator, the runner (via parallel TS code), and the
 host-side review UI.
@@ -37,30 +40,75 @@ def apply_schema(conn):
 
 def _migrate(conn):
     # Idempotent ALTER TABLE ADD COLUMN; SQLite has no ADD COLUMN IF NOT EXISTS.
+    def cols(table):
+        return {r['name'] for r in conn.execute(f'PRAGMA table_info({table})')}
+
     def add_col(table, name, definition):
-        existing = {r['name'] for r in conn.execute(f'PRAGMA table_info({table})')}
-        if name not in existing:
+        if name not in cols(table):
             conn.execute(f'ALTER TABLE {table} ADD COLUMN {name} {definition}')
 
     add_col('visual_baselines', 'prev_baseline_id', 'INTEGER REFERENCES visual_baselines(id) ON DELETE SET NULL')
     add_col('visual_baselines', 'diff_image', 'BLOB')
     add_col('visual_baselines', 'pixel_count', 'INTEGER NOT NULL DEFAULT 0')
     add_col('visual_baselines', 'pixel_pct', 'REAL NOT NULL DEFAULT 0.0')
+    add_col('visual_baselines', 'browser', "TEXT NOT NULL DEFAULT 'chromium'")
+    # The browser column now exists, so the new index is safe to create. The
+    # old (page_id, persona, id DESC) index is no longer the natural lookup
+    # path — every chain query now includes browser too.
+    conn.execute('DROP INDEX IF EXISTS idx_visual_baselines_pp')
+    conn.execute('''CREATE INDEX IF NOT EXISTS idx_visual_baselines_ppb
+                    ON visual_baselines(page_id, persona, browser, id DESC)''')
     add_col('a11y_baselines', 'prev_baseline_id', 'INTEGER REFERENCES a11y_baselines(id) ON DELETE SET NULL')
     add_col('a11y_baselines', 'diff_text', 'TEXT')
     add_col('a11y_baselines', 'added_count', 'INTEGER NOT NULL DEFAULT 0')
     add_col('a11y_baselines', 'removed_count', 'INTEGER NOT NULL DEFAULT 0')
 
+    # visual_diffs needs (page_id, persona, browser) as its PK so chromium and
+    # firefox can coexist. SQLite can't ALTER a PRIMARY KEY, so when we detect
+    # the pre-browser schema, rebuild the table. Existing rows are backfilled
+    # as 'chromium' (the only browser previously supported).
+    if 'browser' not in cols('visual_diffs'):
+        conn.executescript('''
+            ALTER TABLE visual_diffs RENAME TO visual_diffs_old;
+            CREATE TABLE visual_diffs (
+                page_id      TEXT NOT NULL,
+                persona      TEXT NOT NULL,
+                browser      TEXT NOT NULL DEFAULT 'chromium',
+                baseline_id  INTEGER REFERENCES visual_baselines(id) ON DELETE SET NULL,
+                image        BLOB NOT NULL,
+                width        INTEGER NOT NULL,
+                height       INTEGER NOT NULL,
+                diff_image   BLOB,
+                pixel_count  INTEGER NOT NULL DEFAULT 0,
+                pixel_pct    REAL NOT NULL DEFAULT 0.0,
+                captured_at  TEXT NOT NULL,
+                PRIMARY KEY (page_id, persona, browser)
+            );
+            INSERT INTO visual_diffs
+                (page_id, persona, browser, baseline_id, image, width, height,
+                 diff_image, pixel_count, pixel_pct, captured_at)
+            SELECT page_id, persona, 'chromium', baseline_id, image, width, height,
+                   diff_image, pixel_count, pixel_pct, captured_at
+            FROM visual_diffs_old;
+            DROP TABLE visual_diffs_old;
+        ''')
+
     # Backfill prev_baseline_id for baselines accepted before this column
-    # existed: within a (page_id, persona) chain, ordering by id is equivalent
-    # to chronological order. We can't recover the actual pixel/line deltas
+    # existed: within a baseline chain, ordering by id is equivalent to
+    # chronological order. We can't recover the actual pixel/line deltas
     # for these, but at least each step can still be viewed as side-by-side.
-    for table in ('visual_baselines', 'a11y_baselines'):
+    # For visual, the chain is per-browser too; pre-migration rows all share
+    # browser='chromium' so the chaining is unaffected.
+    chain_keys = {
+        'visual_baselines': ('page_id', 'persona', 'browser'),
+        'a11y_baselines':   ('page_id', 'persona'),
+    }
+    for table, keys in chain_keys.items():
+        match = ' AND '.join(f'p.{k} = t.{k}' for k in keys)
         conn.execute(f'''
             UPDATE {table} AS t SET prev_baseline_id = (
                 SELECT MAX(p.id) FROM {table} p
-                WHERE p.page_id = t.page_id AND p.persona = t.persona
-                  AND p.id < t.id
+                WHERE {match} AND p.id < t.id
             )
             WHERE prev_baseline_id IS NULL
         ''')  # noqa: S608
@@ -84,10 +132,10 @@ def _list_diffs(conn, table):
 def list_visual_diffs(conn):
     out = []
     for r in conn.execute(
-        '''SELECT page_id, persona, baseline_id, width, height,
+        '''SELECT page_id, persona, browser, baseline_id, width, height,
                   pixel_count, pixel_pct, captured_at,
                   diff_image IS NOT NULL AS has_diff_image
-           FROM visual_diffs ORDER BY page_id, persona'''
+           FROM visual_diffs ORDER BY page_id, persona, browser'''
     ):
         row = dict(r)
         row['status'] = 'new' if row['baseline_id'] is None else 'changed'
@@ -111,13 +159,13 @@ def list_a11y_diffs(conn):
     return out
 
 
-def get_visual_diff(conn, page_id, persona):
+def get_visual_diff(conn, page_id, persona, browser):
     row = conn.execute(
-        '''SELECT page_id, persona, baseline_id, width, height,
+        '''SELECT page_id, persona, browser, baseline_id, width, height,
                   pixel_count, pixel_pct, captured_at,
                   diff_image IS NOT NULL AS has_diff_image
-           FROM visual_diffs WHERE page_id = ? AND persona = ?''',
-        (page_id, persona),
+           FROM visual_diffs WHERE page_id = ? AND persona = ? AND browser = ?''',
+        (page_id, persona, browser),
     ).fetchone()
     if row is None:
         return None
@@ -146,15 +194,18 @@ def get_a11y_diff(conn, page_id, persona):
 
 def list_visual_baselines(conn):
     return [dict(r) for r in conn.execute('''
-        SELECT b.page_id, b.persona, b.id, b.width, b.height, b.captured_at,
+        SELECT b.page_id, b.persona, b.browser, b.id, b.width, b.height,
+               b.captured_at,
                (SELECT COUNT(*) FROM visual_baselines x
-                 WHERE x.page_id = b.page_id AND x.persona = b.persona) AS history_size
+                 WHERE x.page_id = b.page_id AND x.persona = b.persona
+                   AND x.browser = b.browser) AS history_size
         FROM visual_baselines b
         WHERE b.id = (
             SELECT MAX(id) FROM visual_baselines
             WHERE page_id = b.page_id AND persona = b.persona
+              AND browser = b.browser
         )
-        ORDER BY b.page_id, b.persona
+        ORDER BY b.page_id, b.persona, b.browser
     ''')]
 
 
@@ -172,16 +223,19 @@ def list_a11y_baselines(conn):
     ''')]
 
 
-def baseline_history(conn, table, page_id, persona):
+def baseline_history(conn, table, page_id, persona, browser=None):
     if table == 'visual_baselines':
+        if browser is None:
+            raise ValueError('browser is required for visual_baselines')
         sql = '''
             SELECT id, width, height, captured_at, prev_baseline_id,
                    pixel_count, pixel_pct,
                    diff_image IS NOT NULL AS has_diff_image
             FROM visual_baselines
-            WHERE page_id = ? AND persona = ?
+            WHERE page_id = ? AND persona = ? AND browser = ?
             ORDER BY id DESC
         '''
+        return [dict(r) for r in conn.execute(sql, (page_id, persona, browser))]
     elif table == 'a11y_baselines':
         sql = '''
             SELECT id, node_count, captured_at, prev_baseline_id,
@@ -191,17 +245,17 @@ def baseline_history(conn, table, page_id, persona):
             WHERE page_id = ? AND persona = ?
             ORDER BY id DESC
         '''
+        return [dict(r) for r in conn.execute(sql, (page_id, persona))]
     else:
         raise ValueError(f'unknown history table {table}')
-    return [dict(r) for r in conn.execute(sql, (page_id, persona))]
 
 
-def get_current_baseline_image(conn, page_id, persona):
+def get_current_baseline_image(conn, page_id, persona, browser):
     row = conn.execute('''
         SELECT image FROM visual_baselines
         WHERE id = (SELECT MAX(id) FROM visual_baselines
-                    WHERE page_id = ? AND persona = ?)
-    ''', (page_id, persona)).fetchone()
+                    WHERE page_id = ? AND persona = ? AND browser = ?)
+    ''', (page_id, persona, browser)).fetchone()
     return row['image'] if row else None
 
 
@@ -261,7 +315,7 @@ def get_baseline_diff_image(conn, baseline_id):
 
 def get_visual_baseline_meta(conn, baseline_id):
     row = conn.execute(
-        '''SELECT id, page_id, persona, width, height, captured_at,
+        '''SELECT id, page_id, persona, browser, width, height, captured_at,
                   prev_baseline_id, pixel_count, pixel_pct,
                   diff_image IS NOT NULL AS has_diff_image
            FROM visual_baselines WHERE id = ?''',
@@ -282,7 +336,7 @@ def get_a11y_baseline_meta(conn, baseline_id):
 
 # --- accept / reset ---------------------------------------------------------
 
-def accept_visual(conn, page_id, persona):
+def accept_visual(conn, page_id, persona, browser):
     """Promote the current visual diff to a new baseline.
 
     Captures the diff blob + pixel counts onto the new baseline row, plus a
@@ -292,22 +346,22 @@ def accept_visual(conn, page_id, persona):
     diff = conn.execute(
         '''SELECT image, width, height, baseline_id,
                   diff_image, pixel_count, pixel_pct
-           FROM visual_diffs WHERE page_id = ? AND persona = ?''',
-        (page_id, persona),
+           FROM visual_diffs WHERE page_id = ? AND persona = ? AND browser = ?''',
+        (page_id, persona, browser),
     ).fetchone()
     if diff is None:
         return False
     conn.execute(
         '''INSERT INTO visual_baselines
-               (page_id, persona, image, width, height, captured_at,
+               (page_id, persona, browser, image, width, height, captured_at,
                 prev_baseline_id, diff_image, pixel_count, pixel_pct)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-        (page_id, persona, diff['image'], diff['width'], diff['height'], now_iso(),
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        (page_id, persona, browser, diff['image'], diff['width'], diff['height'], now_iso(),
          diff['baseline_id'], diff['diff_image'], diff['pixel_count'], diff['pixel_pct']),
     )
     conn.execute(
-        'DELETE FROM visual_diffs WHERE page_id = ? AND persona = ?',
-        (page_id, persona),
+        'DELETE FROM visual_diffs WHERE page_id = ? AND persona = ? AND browser = ?',
+        (page_id, persona, browser),
     )
     conn.commit()
     return True
@@ -339,25 +393,36 @@ def accept_a11y(conn, page_id, persona):
     return True
 
 
-def accept_all(conn, *, kind=None):
-    """Accept every current diff. Returns counts per modality."""
+def accept_all(conn, *, kind=None, browser=None):
+    """Accept every current diff. Returns counts per modality.
+
+    The optional `browser` filter only applies to visual diffs (a11y is
+    captured in chromium only and isn't keyed by browser).
+    """
     counts = {'visual': 0, 'a11y': 0}
     if kind in (None, 'visual'):
-        for r in conn.execute('SELECT page_id, persona FROM visual_diffs').fetchall():
-            if accept_visual(conn, r['page_id'], r['persona']):
+        if browser is None:
+            rows = conn.execute('SELECT page_id, persona, browser FROM visual_diffs').fetchall()
+        else:
+            rows = conn.execute(
+                'SELECT page_id, persona, browser FROM visual_diffs WHERE browser = ?',
+                (browser,),
+            ).fetchall()
+        for r in rows:
+            if accept_visual(conn, r['page_id'], r['persona'], r['browser']):
                 counts['visual'] += 1
-    if kind in (None, 'a11y'):
+    if kind in (None, 'a11y') and browser is None:
         for r in conn.execute('SELECT page_id, persona FROM a11y_diffs').fetchall():
             if accept_a11y(conn, r['page_id'], r['persona']):
                 counts['a11y'] += 1
     return counts
 
 
-def reset_visual_baseline(conn, page_id, persona):
-    """Drop the entire baseline history for this page+persona."""
+def reset_visual_baseline(conn, page_id, persona, browser):
+    """Drop the entire baseline history for this page+persona+browser."""
     cur = conn.execute(
-        'DELETE FROM visual_baselines WHERE page_id = ? AND persona = ?',
-        (page_id, persona),
+        'DELETE FROM visual_baselines WHERE page_id = ? AND persona = ? AND browser = ?',
+        (page_id, persona, browser),
     )
     conn.commit()
     return cur.rowcount > 0

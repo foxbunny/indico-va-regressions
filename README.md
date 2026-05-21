@@ -1,6 +1,6 @@
 # Indico Visual & Accessibility Regression Suite
 
-A standalone, local-only regression suite that captures full-page **screenshots** and **accessibility-tree snapshots** for the four user personas (anonymous, registered participant, event manager, server admin) across a curated list of Indico pages, diffs them against a previous baseline, and surfaces the diffs in a review UI where each change can be accepted or rejected.
+A standalone, local-only regression suite that captures full-page **screenshots** (in chromium and firefox) and **accessibility-tree snapshots** (chromium only — firefox has no CDP-equivalent AT tree) for the four user personas (anonymous, registered participant, event manager, server admin) across a curated list of Indico pages, diffs them against a previous baseline, and surfaces the diffs in a review UI where each change can be accepted or rejected.
 
 The suite is **separate from the Indico repository** — it lives at `~/indico-regressions` and expects the Indico source to be at `~/indico` (override via `INDICO_SRC`). Indico, Postgres, and the Playwright runner all run in docker; only the SQLite baselines DB and the review UI run on the host.
 
@@ -65,7 +65,11 @@ On the very first run, no baselines exist so every entry is recorded as `new`. T
 ./visual-regression.sh --page user-dashboard
 ./visual-regression.sh --only-visual    # skip a11y capture
 ./visual-regression.sh --only-a11y      # skip screenshots
+./visual-regression.sh --browser chromium       # one engine only
+./visual-regression.sh --browser chromium,firefox  # default
 ```
+
+Visual baselines are kept **per browser** — chromium and firefox have separate chains because pixel output differs across engines. A11y is captured in chromium only.
 
 ### Pointing at a different Indico checkout
 

@@ -55,30 +55,49 @@ function pageTitleRow(title, ...items) {
   );
 }
 
-async function otherDiffExists(kind, pageId, persona) {
-  const other = kind === 'visual' ? 'a11y' : 'visual';
+// Find every other open diff for the same (page, persona) — a11y, and any
+// visual entry across every browser. Used to render "switch" links in a single
+// diff's detail view.
+async function siblingDiffs(currentKey, pageId, persona) {
   try {
-    const res = await fetch(`/api/diffs/${other}/${pageId}/${persona}`, {method: 'HEAD'});
-    return res.ok;
+    const data = await fetchJson('/api/diffs');
+    const visuals = data.visual.filter(d => d.page_id === pageId && d.persona === persona);
+    const a11y = data.a11y.find(d => d.page_id === pageId && d.persona === persona) || null;
+    return {visuals, a11y, currentKey};
   } catch {
-    return false;
+    return {visuals: [], a11y: null, currentKey};
   }
 }
 
-function switchKindLink(currentKind, pageId, persona) {
-  const other = currentKind === 'visual' ? 'a11y' : 'visual';
-  const label = other === 'visual' ? 'View visual diff' : 'View a11y diff';
-  return el('a', {
-    href: `#/diff/${other}/${pageId}/${persona}`,
-    class: `view-btn view-btn-${other}`,
-  }, icon(other === 'visual' ? 'eye' : 'a11y'), ' ', label);
+function diffKey(kind, browser) {
+  return kind === 'visual' ? `visual:${browser}` : 'a11y';
 }
 
-function historyLink(kind, pageId, persona) {
-  return el('a', {
-    href: `#/history/${kind}/${pageId}/${persona}`,
-    class: 'icon-link',
-  }, icon('history'), ' History');
+function switchKindLinks(currentKey, pageId, persona, siblings) {
+  // Render a link for every sibling that isn't the one we're already looking at.
+  const out = [];
+  for (const v of siblings.visuals) {
+    const key = diffKey('visual', v.browser);
+    if (key === currentKey) continue;
+    out.push(el('a', {
+      href: `#/diff/visual/${v.browser}/${pageId}/${persona}`,
+      class: 'view-btn view-btn-visual',
+    }, icon('eye'), ` View visual (${v.browser})`));
+  }
+  if (siblings.a11y && currentKey !== 'a11y') {
+    out.push(el('a', {
+      href: `#/diff/a11y/${pageId}/${persona}`,
+      class: 'view-btn view-btn-a11y',
+    }, icon('a11y'), ' View a11y diff'));
+  }
+  return out;
+}
+
+function historyLink(kind, pageId, persona, browser) {
+  const href = kind === 'visual'
+    ? `#/history/visual/${browser}/${pageId}/${persona}`
+    : `#/history/a11y/${pageId}/${persona}`;
+  return el('a', {href, class: 'icon-link'}, icon('history'), ' History');
 }
 
 function statusBadge(status) {
@@ -111,11 +130,12 @@ function navLinks(active) {
 
 function visualChange(v) {
   const cls = `change-chip change-visual change-${v.status}`;
+  const browserTag = el('span', {class: 'browser-tag'}, v.browser);
   if (v.status === 'new') {
-    return el('span', {class: cls}, icon('eye'), ' new');
+    return el('span', {class: cls}, icon('eye'), ' ', browserTag, ' new');
   }
   const pct = v.pixel_pct ? v.pixel_pct.toFixed(3) : '0';
-  return el('span', {class: cls}, icon('eye'), ` ${pct}% (${humanPx(v.pixel_count)})`);
+  return el('span', {class: cls}, icon('eye'), ' ', browserTag, ` ${pct}% (${humanPx(v.pixel_count)})`);
 }
 
 function a11yChange(a) {
@@ -130,56 +150,77 @@ function thumbLink(href, content) {
   return el('a', {href, class: 'thumb-link'}, content);
 }
 
-function changesCell(v, a) {
+function changesCell(visuals, a) {
   return el('span', {class: 'changes-cell'},
-    v ? visualChange(v) : null,
+    ...visuals.map(visualChange),
     a ? a11yChange(a) : null,
   );
 }
 
-function combinedDiffsTable(visualMap, a11yMap) {
-  // Build a sorted list of (page_id, persona) keys that have a diff in either modality.
-  const keys = new Set([...visualMap.keys(), ...a11yMap.keys()]);
+function combinedDiffsTable(visualGroups, a11yMap) {
+  // Build a sorted list of (page_id, persona) keys that have a diff in either
+  // modality. Visuals are pre-grouped per (page, persona) → list of per-browser
+  // rows; a11y is at most one row per (page, persona).
+  const keys = new Set([...visualGroups.keys(), ...a11yMap.keys()]);
   if (keys.size === 0) {
     return el('p', {class: 'empty'},
-      'No open diffs — every page matches its baseline in both modalities.');
+      'No open diffs — every page matches its baseline in any captured browser.');
   }
   const sorted = [...keys].sort();
   const tbody = el('tbody');
   for (const key of sorted) {
-    const v = visualMap.get(key) || null;
+    const visuals = visualGroups.get(key) || [];
     const a = a11yMap.get(key) || null;
     const [pageId, persona] = key.split('\0');
-    // Preview shows the diff PNG (red-highlighted pixel changes). For 'new'
-    // visual diffs there's no baseline → no diff PNG; fall back to a label.
-    // Whole preview is linked to the most informative diff for the row: the
-    // visual one if any visual change is present, otherwise the a11y one.
-    const previewContent = v && v.has_diff_image
-      ? el('img', {class: 'thumb', src: `/img/diff/${pageId}/${persona}.png`, loading: 'lazy', alt: ''})
-      : v
-        ? el('span', {class: 'empty thumb-placeholder'}, '(new — no diff)')
-        : el('span', {class: 'empty thumb-placeholder'}, 'a11y-only');
-    const previewKind = v ? 'visual' : 'a11y';
-    const thumbCell = thumbLink(`#/diff/${previewKind}/${pageId}/${persona}`, previewContent);
+    // Preview thumbnail prefers a visual diff overlay (any browser, first one
+    // with a diff image wins). New visuals have no overlay; a11y-only rows
+    // get a text placeholder.
+    const previewVisual = visuals.find(v => v.has_diff_image) || visuals[0] || null;
+    let previewContent;
+    let previewHref;
+    if (previewVisual && previewVisual.has_diff_image) {
+      previewContent = el('img', {
+        class: 'thumb',
+        src: `/img/diff/${previewVisual.browser}/${pageId}/${persona}.png`,
+        loading: 'lazy', alt: '',
+      });
+      previewHref = `#/diff/visual/${previewVisual.browser}/${pageId}/${persona}`;
+    } else if (previewVisual) {
+      previewContent = el('span', {class: 'empty thumb-placeholder'}, '(new — no diff)');
+      previewHref = `#/diff/visual/${previewVisual.browser}/${pageId}/${persona}`;
+    } else {
+      previewContent = el('span', {class: 'empty thumb-placeholder'}, 'a11y-only');
+      previewHref = `#/diff/a11y/${pageId}/${persona}`;
+    }
     const rowCb = el('input', {
       type: 'checkbox',
       class: 'row-cb',
       'data-page-id': pageId,
       'data-persona': persona,
-      'data-has-visual': v ? 'true' : 'false',
+      'data-visual-browsers': visuals.map(v => v.browser).join(','),
       'data-has-a11y': a ? 'true' : 'false',
       onchange: updateSelectAllState,
     });
+    const actionBtns = [];
+    for (const v of visuals) {
+      actionBtns.push(el('button', {
+        class: 'view-btn view-btn-visual',
+        onclick: () => { location.hash = `#/diff/visual/${v.browser}/${pageId}/${persona}`; },
+      }, icon('eye'), ` ${v.browser}`));
+    }
+    if (a) {
+      actionBtns.push(el('button', {
+        class: 'view-btn view-btn-a11y',
+        onclick: () => { location.hash = `#/diff/a11y/${pageId}/${persona}`; },
+      }, icon('a11y'), ' a11y'));
+    }
     tbody.appendChild(el('tr', {},
       el('td', {class: 'cb-cell'}, rowCb),
-      el('td', {class: 'thumb-cell'}, thumbCell),
+      el('td', {class: 'thumb-cell'}, thumbLink(previewHref, previewContent)),
       el('td', {}, pageId),
       el('td', {}, persona),
-      el('td', {}, changesCell(v, a)),
-      el('td', {class: 'actions-cell'},
-        v ? el('button', {class: 'view-btn view-btn-visual', onclick: () => { location.hash = `#/diff/visual/${pageId}/${persona}`; }}, icon('eye'), ' visual') : null,
-        a ? el('button', {class: 'view-btn view-btn-a11y', onclick: () => { location.hash = `#/diff/a11y/${pageId}/${persona}`; }}, icon('a11y'), ' a11y') : null,
-      ),
+      el('td', {}, changesCell(visuals, a)),
+      el('td', {class: 'actions-cell'}, ...actionBtns),
     ));
   }
   const headerCb = el('input', {
@@ -205,7 +246,7 @@ function selectRows(filter) {
   for (const cb of cbs) {
     if (filter === 'all') cb.checked = true;
     else if (filter === 'none') cb.checked = false;
-    else if (filter === 'visual') cb.checked = cb.dataset.hasVisual === 'true';
+    else if (filter === 'visual') cb.checked = cb.dataset.visualBrowsers !== '';
     else if (filter === 'a11y') cb.checked = cb.dataset.hasA11y === 'true';
   }
   updateSelectAllState();
@@ -228,9 +269,10 @@ async function acceptSelected() {
   }
   if (!confirm(`Promote ${cbs.length} selected proposal(s) to baseline?`)) return;
   for (const cb of cbs) {
-    const {pageId, persona, hasVisual, hasA11y} = cb.dataset;
-    if (hasVisual === 'true') {
-      await fetchJson(`/api/diffs/visual/${pageId}/${persona}/accept`, {method: 'POST'});
+    const {pageId, persona, visualBrowsers, hasA11y} = cb.dataset;
+    const browsers = visualBrowsers ? visualBrowsers.split(',') : [];
+    for (const browser of browsers) {
+      await fetchJson(`/api/diffs/visual/${browser}/${pageId}/${persona}/accept`, {method: 'POST'});
     }
     if (hasA11y === 'true') {
       await fetchJson(`/api/diffs/a11y/${pageId}/${persona}/accept`, {method: 'POST'});
@@ -243,16 +285,27 @@ async function renderDiffs() {
   breadcrumb.textContent = '';
   app.replaceChildren(navLinks('diffs'), el('p', {}, 'Loading…'));
   const data = await fetchJson('/api/diffs');
-  const visualMap = new Map(data.visual.map(d => [`${d.page_id}\0${d.persona}`, d]));
-  const a11yMap   = new Map(data.a11y.map(d => [`${d.page_id}\0${d.persona}`, d]));
+  // Group visual rows by (page, persona) since the same key can now have one
+  // per browser. a11y still has at most one row per (page, persona).
+  const visualGroups = new Map();
+  for (const v of data.visual) {
+    const key = `${v.page_id}\0${v.persona}`;
+    if (!visualGroups.has(key)) visualGroups.set(key, []);
+    visualGroups.get(key).push(v);
+  }
+  const a11yMap = new Map(data.a11y.map(d => [`${d.page_id}\0${d.persona}`, d]));
   const totalVisual = data.visual.length;
   const totalA11y = data.a11y.length;
 
-  // Count classifications for the summary line.
-  let bothCount = 0;
-  for (const k of visualMap.keys()) if (a11yMap.has(k)) bothCount += 1;
-  const visualOnly = totalVisual - bothCount;
-  const a11yOnly = totalA11y - bothCount;
+  // Per-browser totals for the summary line.
+  const visualByBrowser = new Map();
+  for (const v of data.visual) {
+    visualByBrowser.set(v.browser, (visualByBrowser.get(v.browser) || 0) + 1);
+  }
+  const browserSummary = [...visualByBrowser.entries()]
+    .sort()
+    .map(([b, n]) => `${n} ${b}`)
+    .join(' + ');
 
   app.replaceChildren(
     navLinks('diffs'),
@@ -261,8 +314,9 @@ async function renderDiffs() {
       totalVisual + totalA11y === 0
         ? 'Everything matches its baseline.'
         : el('span', {},
-            `${visualOnly} visual-only · ${a11yOnly} a11y-only · ${bothCount} affecting both `,
-            `(${totalVisual} visual + ${totalA11y} a11y open diffs in total)`,
+            `${totalVisual} visual open diff${totalVisual === 1 ? '' : 's'}`,
+            browserSummary ? ` (${browserSummary})` : '',
+            ` · ${totalA11y} a11y open diff${totalA11y === 1 ? '' : 's'}`,
           ),
     ),
     totalVisual + totalA11y > 0 ? el('div', {class: 'diff-toolbar'},
@@ -270,7 +324,7 @@ async function renderDiffs() {
       el('button', {onclick: () => selectRows('a11y')}, 'Select all a11y'),
       el('button', {class: 'accept', onclick: acceptSelected}, icon('check'), ' Accept selected'),
     ) : null,
-    combinedDiffsTable(visualMap, a11yMap),
+    combinedDiffsTable(visualGroups, a11yMap),
   );
 }
 
@@ -283,25 +337,29 @@ function baselinesTable(kind, rows) {
     const thumbContent = kind === 'visual'
       ? el('img', {class: 'thumb', src: `/img/baseline/by-id/${row.id}.png`, loading: 'lazy', alt: ''})
       : el('span', {class: 'empty thumb-placeholder'}, `${row.node_count} nodes`);
-    const historyHref = `#/history/${kind}/${row.page_id}/${row.persona}`;
-    tbody.appendChild(el('tr', {},
+    const historyHref = kind === 'visual'
+      ? `#/history/visual/${row.browser}/${row.page_id}/${row.persona}`
+      : `#/history/a11y/${row.page_id}/${row.persona}`;
+    const cells = [
       el('td', {class: 'thumb-cell'}, thumbLink(historyHref, thumbContent)),
       el('td', {}, row.page_id),
       el('td', {}, row.persona),
+    ];
+    if (kind === 'visual') {
+      cells.push(el('td', {}, el('span', {class: 'browser-tag'}, row.browser)));
+    }
+    cells.push(
       el('td', {}, row.captured_at),
       el('td', {}, String(row.history_size)),
       el('td', {}, el('a', {href: historyHref}, 'history')),
-    ));
+    );
+    tbody.appendChild(el('tr', {}, ...cells));
   }
+  const headers = [el('th', {}, 'Preview'), el('th', {}, 'Page'), el('th', {}, 'Persona')];
+  if (kind === 'visual') headers.push(el('th', {}, 'Browser'));
+  headers.push(el('th', {}, 'Current accepted'), el('th', {}, 'Versions'), el('th', {}, ''));
   return el('table', {},
-    el('thead', {}, el('tr', {},
-      el('th', {}, 'Preview'),
-      el('th', {}, 'Page'),
-      el('th', {}, 'Persona'),
-      el('th', {}, 'Current accepted'),
-      el('th', {}, 'Versions'),
-      el('th', {}, ''),
-    )),
+    el('thead', {}, el('tr', {}, ...headers)),
     tbody,
   );
 }
@@ -359,14 +417,19 @@ function historyPreviewCell(kind, row) {
   return el('span', {class: 'empty thumb-placeholder'}, `${row.node_count} nodes`);
 }
 
-async function renderHistory(kind, pageId, persona) {
-  breadcrumb.innerHTML = `&rsaquo; <a href="#/baselines">baselines</a> &rsaquo; ${escape(pageId)} (${escape(persona)})`;
+async function renderHistory(kind, pageId, persona, browser) {
+  const titleSuffix = kind === 'visual' ? ` · ${browser}` : '';
+  breadcrumb.innerHTML = `&rsaquo; <a href="#/baselines">baselines</a> &rsaquo; ${escape(pageId)} (${escape(persona)}${escape(titleSuffix)})`;
   app.replaceChildren(el('p', {}, 'Loading history…'));
-  const history = await fetchJson(`/api/baselines/${kind}/${pageId}/${persona}`);
+  const historyUrl = kind === 'visual'
+    ? `/api/baselines/visual/${browser}/${pageId}/${persona}`
+    : `/api/baselines/a11y/${pageId}/${persona}`;
+  const history = await fetchJson(historyUrl);
   if (history.length === 0) {
-    app.replaceChildren(el('p', {class: 'empty'}, 'No baselines for this page+persona.'));
+    app.replaceChildren(el('p', {class: 'empty'}, 'No baselines for this entry.'));
     return;
   }
+  const historicDiffHref = id => `#/history-diff/${kind}/${pageId}/${persona}/${id}`;
   const tbody = el('tbody');
   history.forEach((row, idx) => {
     const isCurrent = idx === 0;
@@ -375,11 +438,7 @@ async function renderHistory(kind, pageId, persona) {
     // historic-diff viewer for any chained step and degrade gracefully there.
     const canView = row.prev_baseline_id != null;
     const previewContent = historyPreviewCell(kind, row);
-    // Chained step → click the preview to open the historic diff viewer.
-    // Initial baseline has no diff to view, so the preview is plain.
-    const previewCell = canView
-      ? thumbLink(`#/history-diff/${kind}/${pageId}/${persona}/${row.id}`, previewContent)
-      : previewContent;
+    const previewCell = canView ? thumbLink(historicDiffHref(row.id), previewContent) : previewContent;
     tbody.appendChild(el('tr', {},
       el('td', {class: 'thumb-cell'}, previewCell),
       el('td', {}, humanTime(row.captured_at),
@@ -387,7 +446,7 @@ async function renderHistory(kind, pageId, persona) {
       el('td', {}, historyChangeChip(kind, row)),
       el('td', {class: 'actions-cell'},
         canView ? el('a', {
-          href: `#/history-diff/${kind}/${pageId}/${persona}/${row.id}`,
+          href: historicDiffHref(row.id),
           class: `view-btn view-btn-${kind}`,
         }, icon(kind === 'visual' ? 'eye' : 'a11y'), ' View diff') : null,
       ),
@@ -395,12 +454,12 @@ async function renderHistory(kind, pageId, persona) {
   });
 
   app.replaceChildren(
-    pageTitleRow(`History: ${pageId} · ${persona} (${kind})`),
+    pageTitleRow(`History: ${pageId} · ${persona}${titleSuffix} (${kind})`),
     el('p', {class: 'run-meta'},
       `${history.length} accepted baseline${history.length === 1 ? '' : 's'}, most recent first. `,
       'Each row shows the change against the previous baseline.'),
     el('div', {class: 'diff-toolbar'},
-      el('button', {class: 'reset', onclick: () => resetBaseline(kind, pageId, persona)},
+      el('button', {class: 'reset', onclick: () => resetBaseline(kind, pageId, persona, browser)},
         icon('trash'), ' Forget all baselines'),
     ),
     el('table', {},
@@ -417,14 +476,21 @@ async function renderHistory(kind, pageId, persona) {
 
 // --- diff viewer ------------------------------------------------------------
 
-async function acceptDiff(kind, pageId, persona) {
-  await fetchJson(`/api/diffs/${kind}/${pageId}/${persona}/accept`, {method: 'POST'});
+async function acceptDiff(kind, pageId, persona, browser) {
+  const url = kind === 'visual'
+    ? `/api/diffs/visual/${browser}/${pageId}/${persona}/accept`
+    : `/api/diffs/a11y/${pageId}/${persona}/accept`;
+  await fetchJson(url, {method: 'POST'});
   location.hash = '#/';
 }
 
-async function resetBaseline(kind, pageId, persona) {
-  if (!confirm(`Forget every accepted baseline for ${pageId} (${persona})?\nThe next run will record it as "new".`)) return;
-  await fetchJson(`/api/baselines/${kind}/${pageId}/${persona}/reset`, {method: 'POST'});
+async function resetBaseline(kind, pageId, persona, browser) {
+  const label = kind === 'visual' ? `${pageId} (${persona} · ${browser})` : `${pageId} (${persona})`;
+  if (!confirm(`Forget every accepted baseline for ${label}?\nThe next run will record it as "new".`)) return;
+  const url = kind === 'visual'
+    ? `/api/baselines/visual/${browser}/${pageId}/${persona}/reset`
+    : `/api/baselines/a11y/${pageId}/${persona}/reset`;
+  await fetchJson(url, {method: 'POST'});
   location.hash = '#/baselines';
 }
 
@@ -545,18 +611,18 @@ function attachZoom(targets) {
   }
 }
 
-async function renderVisualDiff(pageId, persona) {
-  breadcrumb.innerHTML = `&rsaquo; <a href="#/">open diffs</a> &rsaquo; ${escape(pageId)} (${escape(persona)})`;
+async function renderVisualDiff(pageId, persona, browser) {
+  breadcrumb.innerHTML = `&rsaquo; <a href="#/">open diffs</a> &rsaquo; ${escape(pageId)} (${escape(persona)} · ${escape(browser)})`;
   app.replaceChildren(el('p', {}, 'Loading diff…'));
-  const [diff, hasOther] = await Promise.all([
-    fetchJson(`/api/diffs/visual/${pageId}/${persona}`),
-    otherDiffExists('visual', pageId, persona),
+  const [diff, siblings] = await Promise.all([
+    fetchJson(`/api/diffs/visual/${browser}/${pageId}/${persona}`),
+    siblingDiffs(diffKey('visual', browser), pageId, persona),
   ]);
   const hasBaseline = diff.baseline_id !== null;
 
   const diffImg = diff.has_diff_image
     ? el('img', {
-        src: `/img/diff/${pageId}/${persona}.png`,
+        src: `/img/diff/${browser}/${pageId}/${persona}.png`,
         alt: 'pixel-difference overlay',
         class: 'zoom-img',
       })
@@ -570,15 +636,15 @@ async function renderVisualDiff(pageId, persona) {
   if (diffImg) attachZoom([{viewport: diffBody, image: diffImg}]);
 
   const viewer = buildSyncedViewer({
-    baselineSrc: `/img/baseline/${pageId}/${persona}.png`,
-    proposalSrc: `/img/proposal/${pageId}/${persona}.png`,
+    baselineSrc: `/img/baseline/${browser}/${pageId}/${persona}.png`,
+    proposalSrc: `/img/proposal/${browser}/${pageId}/${persona}.png`,
     hasBaseline,
   });
 
   app.replaceChildren(
-    pageTitleRow(`Visual: ${pageId} · ${persona}`,
-      hasOther ? switchKindLink('visual', pageId, persona) : null,
-      hasBaseline ? historyLink('visual', pageId, persona) : null,
+    pageTitleRow(`Visual: ${pageId} · ${persona} · ${browser}`,
+      ...switchKindLinks(diffKey('visual', browser), pageId, persona, siblings),
+      hasBaseline ? historyLink('visual', pageId, persona, browser) : null,
     ),
     el('p', {class: 'run-meta'},
       `${diff.pixel_pct ? diff.pixel_pct.toFixed(3) : '0'}% (${humanPx(diff.pixel_count)}) · captured ${humanTime(diff.captured_at)}`,
@@ -589,9 +655,9 @@ async function renderVisualDiff(pageId, persona) {
     el('h3', {class: 'section-title'}, 'Side-by-side'),
     viewer,
     el('div', {class: 'diff-toolbar diff-toolbar-bottom'},
-      el('button', {class: 'accept', onclick: () => acceptDiff('visual', pageId, persona)},
+      el('button', {class: 'accept', onclick: () => acceptDiff('visual', pageId, persona, browser)},
         icon('check'), ' Update baseline to this'),
-      hasBaseline ? el('button', {class: 'reset', onclick: () => resetBaseline('visual', pageId, persona)},
+      hasBaseline ? el('button', {class: 'reset', onclick: () => resetBaseline('visual', pageId, persona, browser)},
         icon('trash'), ' Forget baseline') : null,
     ),
   );
@@ -606,11 +672,11 @@ async function fetchText(url) {
 async function renderA11yDiff(pageId, persona) {
   breadcrumb.innerHTML = `&rsaquo; <a href="#/">open diffs</a> &rsaquo; ${escape(pageId)} (${escape(persona)})`;
   app.replaceChildren(el('p', {}, 'Loading diff…'));
-  const [diff, baselineOutline, proposalOutline, hasOther] = await Promise.all([
+  const [diff, baselineOutline, proposalOutline, siblings] = await Promise.all([
     fetchJson(`/api/diffs/a11y/${pageId}/${persona}`),
     fetchText(`/outline/baseline/${pageId}/${persona}`),
     fetchText(`/outline/proposal/${pageId}/${persona}`),
-    otherDiffExists('a11y', pageId, persona),
+    siblingDiffs('a11y', pageId, persona),
   ]);
   const hasBaseline = diff.baseline_id !== null;
 
@@ -627,7 +693,7 @@ async function renderA11yDiff(pageId, persona) {
 
   app.replaceChildren(
     pageTitleRow(`A11y: ${pageId} · ${persona}`,
-      hasOther ? switchKindLink('a11y', pageId, persona) : null,
+      ...switchKindLinks('a11y', pageId, persona, siblings),
       hasBaseline ? historyLink('a11y', pageId, persona) : null,
     ),
     el('p', {class: 'run-meta'},
@@ -653,9 +719,10 @@ async function renderA11yDiff(pageId, persona) {
 // --- historic diff viewer (one accepted step in a baseline's history) -------
 
 async function renderHistoricVisualDiff(pageId, persona, baselineId) {
-  breadcrumb.innerHTML = `&rsaquo; <a href="#/baselines">baselines</a> &rsaquo; <a href="#/history/visual/${escape(pageId)}/${escape(persona)}">${escape(pageId)} (${escape(persona)})</a> &rsaquo; #${baselineId}`;
   app.replaceChildren(el('p', {}, 'Loading diff…'));
   const meta = await fetchJson(`/api/baseline-step/visual/${baselineId}`);
+  const browser = meta.browser;
+  breadcrumb.innerHTML = `&rsaquo; <a href="#/baselines">baselines</a> &rsaquo; <a href="#/history/visual/${escape(browser)}/${escape(pageId)}/${escape(persona)}">${escape(pageId)} (${escape(persona)} · ${escape(browser)})</a> &rsaquo; #${baselineId}`;
   if (meta.prev_baseline_id == null) {
     app.replaceChildren(el('p', {class: 'empty'}, 'This is the initial baseline — nothing to diff against.'));
     return;
@@ -683,8 +750,8 @@ async function renderHistoricVisualDiff(pageId, persona, baselineId) {
     : `accepted ${humanTime(meta.captured_at)} · #${meta.prev_baseline_id} → #${meta.id} · diff overlay not stored (pre-migration baseline)`;
 
   app.replaceChildren(
-    pageTitleRow(`Visual history: ${pageId} · ${persona}`,
-      historyLink('visual', pageId, persona),
+    pageTitleRow(`Visual history: ${pageId} · ${persona} · ${browser}`,
+      historyLink('visual', pageId, persona, browser),
     ),
     el('p', {class: 'run-meta'}, metricLine),
     el('p', {class: 'run-meta'}, 'Read-only view of an accepted step. Baseline = the version this replaced; Proposal = the version that became current at this step.'),
@@ -782,11 +849,17 @@ async function route() {
     if (hash === '/' || hash === '/diffs' || hash === '') return await renderDiffs();
     if (hash === '/baselines')                            return await renderBaselines();
     if (hash === '/runs')                                 return await renderRuns();
-    if ((m = hash.match(/^\/diff\/(visual|a11y)\/([^/]+)\/([^/]+)$/))) {
-      return m[1] === 'visual' ? renderVisualDiff(m[2], m[3]) : renderA11yDiff(m[2], m[3]);
+    if ((m = hash.match(/^\/diff\/visual\/([^/]+)\/([^/]+)\/([^/]+)$/))) {
+      return await renderVisualDiff(m[2], m[3], m[1]);
     }
-    if ((m = hash.match(/^\/history\/(visual|a11y)\/([^/]+)\/([^/]+)$/))) {
-      return await renderHistory(m[1], m[2], m[3]);
+    if ((m = hash.match(/^\/diff\/a11y\/([^/]+)\/([^/]+)$/))) {
+      return await renderA11yDiff(m[1], m[2]);
+    }
+    if ((m = hash.match(/^\/history\/visual\/([^/]+)\/([^/]+)\/([^/]+)$/))) {
+      return await renderHistory('visual', m[2], m[3], m[1]);
+    }
+    if ((m = hash.match(/^\/history\/a11y\/([^/]+)\/([^/]+)$/))) {
+      return await renderHistory('a11y', m[1], m[2]);
     }
     if ((m = hash.match(/^\/history-diff\/(visual|a11y)\/([^/]+)\/([^/]+)\/(\d+)$/))) {
       return m[1] === 'visual'

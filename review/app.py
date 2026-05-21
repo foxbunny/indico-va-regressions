@@ -53,16 +53,11 @@ def api_diffs():
         conn.close()
 
 
-@app.route('/api/diffs/<kind>/<page_id>/<persona>')
-def api_diff_one(kind, page_id, persona):
+@app.route('/api/diffs/visual/<browser>/<page_id>/<persona>')
+def api_visual_diff_one(browser, page_id, persona):
     conn = get_conn()
     try:
-        if kind == 'visual':
-            row = store.get_visual_diff(conn, page_id, persona)
-        elif kind == 'a11y':
-            row = store.get_a11y_diff(conn, page_id, persona)
-        else:
-            abort(404)
+        row = store.get_visual_diff(conn, page_id, persona, browser)
         if row is None:
             abort(404)
         return jsonify(row)
@@ -70,18 +65,35 @@ def api_diff_one(kind, page_id, persona):
         conn.close()
 
 
-@app.route('/api/diffs/<kind>/<page_id>/<persona>/accept', methods=['POST'])
-def api_accept(kind, page_id, persona):
-    """Promote the open diff to a new baseline. Drops the diff row."""
+@app.route('/api/diffs/a11y/<page_id>/<persona>')
+def api_a11y_diff_one(page_id, persona):
     conn = get_conn()
     try:
-        if kind == 'visual':
-            ok = store.accept_visual(conn, page_id, persona)
-        elif kind == 'a11y':
-            ok = store.accept_a11y(conn, page_id, persona)
-        else:
+        row = store.get_a11y_diff(conn, page_id, persona)
+        if row is None:
             abort(404)
-        if not ok:
+        return jsonify(row)
+    finally:
+        conn.close()
+
+
+@app.route('/api/diffs/visual/<browser>/<page_id>/<persona>/accept', methods=['POST'])
+def api_accept_visual(browser, page_id, persona):
+    """Promote the open visual diff to a new baseline. Drops the diff row."""
+    conn = get_conn()
+    try:
+        if not store.accept_visual(conn, page_id, persona, browser):
+            abort(404)
+        return jsonify({'status': 'accepted'})
+    finally:
+        conn.close()
+
+
+@app.route('/api/diffs/a11y/<page_id>/<persona>/accept', methods=['POST'])
+def api_accept_a11y(page_id, persona):
+    conn = get_conn()
+    try:
+        if not store.accept_a11y(conn, page_id, persona):
             abort(404)
         return jsonify({'status': 'accepted'})
     finally:
@@ -91,11 +103,14 @@ def api_accept(kind, page_id, persona):
 @app.route('/api/diffs/accept-all', methods=['POST'])
 def api_accept_all():
     kind = request.args.get('kind')
+    browser = request.args.get('browser')
     if kind not in (None, 'visual', 'a11y'):
         abort(400, 'kind must be visual or a11y')
+    if browser is not None and kind == 'a11y':
+        abort(400, 'browser filter does not apply to a11y')
     conn = get_conn()
     try:
-        return jsonify(store.accept_all(conn, kind=kind))
+        return jsonify(store.accept_all(conn, kind=kind, browser=browser))
     finally:
         conn.close()
 
@@ -115,30 +130,43 @@ def api_baselines():
         conn.close()
 
 
-@app.route('/api/baselines/<kind>/<page_id>/<persona>')
-def api_baseline_history(kind, page_id, persona):
-    table = {'visual': 'visual_baselines', 'a11y': 'a11y_baselines'}.get(kind)
-    if table is None:
-        abort(404)
+@app.route('/api/baselines/visual/<browser>/<page_id>/<persona>')
+def api_visual_baseline_history(browser, page_id, persona):
     conn = get_conn()
     try:
-        return jsonify(store.baseline_history(conn, table, page_id, persona))
+        return jsonify(store.baseline_history(
+            conn, 'visual_baselines', page_id, persona, browser=browser,
+        ))
     finally:
         conn.close()
 
 
-@app.route('/api/baselines/<kind>/<page_id>/<persona>/reset', methods=['POST'])
-def api_reset_baseline(kind, page_id, persona):
-    """Drop the entire baseline history for this page+persona."""
+@app.route('/api/baselines/a11y/<page_id>/<persona>')
+def api_a11y_baseline_history(page_id, persona):
     conn = get_conn()
     try:
-        if kind == 'visual':
-            ok = store.reset_visual_baseline(conn, page_id, persona)
-        elif kind == 'a11y':
-            ok = store.reset_a11y_baseline(conn, page_id, persona)
-        else:
-            abort(404)
-        if not ok:
+        return jsonify(store.baseline_history(conn, 'a11y_baselines', page_id, persona))
+    finally:
+        conn.close()
+
+
+@app.route('/api/baselines/visual/<browser>/<page_id>/<persona>/reset', methods=['POST'])
+def api_reset_visual_baseline(browser, page_id, persona):
+    """Drop the entire visual baseline history for this page+persona+browser."""
+    conn = get_conn()
+    try:
+        if not store.reset_visual_baseline(conn, page_id, persona, browser):
+            abort(404, 'no baseline existed')
+        return jsonify({'status': 'reset'})
+    finally:
+        conn.close()
+
+
+@app.route('/api/baselines/a11y/<page_id>/<persona>/reset', methods=['POST'])
+def api_reset_a11y_baseline(page_id, persona):
+    conn = get_conn()
+    try:
+        if not store.reset_a11y_baseline(conn, page_id, persona):
             abort(404, 'no baseline existed')
         return jsonify({'status': 'reset'})
     finally:
@@ -147,13 +175,14 @@ def api_reset_baseline(kind, page_id, persona):
 
 # --- image / tree byte streams ---------------------------------------------
 
-@app.route('/img/diff/<page_id>/<persona>.png')
-def img_diff_overlay(page_id, persona):
+@app.route('/img/diff/<browser>/<page_id>/<persona>.png')
+def img_diff_overlay(browser, page_id, persona):
     conn = get_conn()
     try:
         row = conn.execute(
-            'SELECT diff_image FROM visual_diffs WHERE page_id = ? AND persona = ?',
-            (page_id, persona),
+            '''SELECT diff_image FROM visual_diffs
+               WHERE page_id = ? AND persona = ? AND browser = ?''',
+            (page_id, persona, browser),
         ).fetchone()
         if row is None or row['diff_image'] is None:
             abort(404)
@@ -162,13 +191,14 @@ def img_diff_overlay(page_id, persona):
         conn.close()
 
 
-@app.route('/img/proposal/<page_id>/<persona>.png')
-def img_proposal(page_id, persona):
+@app.route('/img/proposal/<browser>/<page_id>/<persona>.png')
+def img_proposal(browser, page_id, persona):
     conn = get_conn()
     try:
         row = conn.execute(
-            'SELECT image FROM visual_diffs WHERE page_id = ? AND persona = ?',
-            (page_id, persona),
+            '''SELECT image FROM visual_diffs
+               WHERE page_id = ? AND persona = ? AND browser = ?''',
+            (page_id, persona, browser),
         ).fetchone()
         if row is None:
             abort(404)
@@ -177,11 +207,11 @@ def img_proposal(page_id, persona):
         conn.close()
 
 
-@app.route('/img/baseline/<page_id>/<persona>.png')
-def img_current_baseline(page_id, persona):
+@app.route('/img/baseline/<browser>/<page_id>/<persona>.png')
+def img_current_baseline(browser, page_id, persona):
     conn = get_conn()
     try:
-        blob = store.get_current_baseline_image(conn, page_id, persona)
+        blob = store.get_current_baseline_image(conn, page_id, persona, browser)
         if blob is None:
             abort(404)
         return blob, 200, {'Content-Type': 'image/png'}
