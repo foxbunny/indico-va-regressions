@@ -6,7 +6,8 @@
 #                     and starts Indico inside docker)
 #   setup             pre-build the indico + runner images (optional warm-up)
 #   review            launch the host-side Flask review UI on port 8002
-#   accept-all <id>   bulk-accept all changed/new diffs in a run
+#   accept-all [--browser <name>]
+#                     bulk-accept every open diff (optionally one browser only)
 #   wipe-baselines    drop both baseline tables (with confirmation)
 #   shell             open a bash shell in the runner container
 #   logs              tail the Indico server logs
@@ -139,19 +140,21 @@ cmd_review() {
 
 cmd_accept_all() {
   require_py
-  local run_id="${1:-}"
-  if [[ -z "$run_id" ]]; then
-    color err "usage: $0 accept-all <run_id>"
-    exit 1
-  fi
+  local browser=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --browser) browser="${2:-}"; shift 2 ;;
+      *) color err "usage: $0 accept-all [--browser <name>]"; exit 1 ;;
+    esac
+  done
   PYTHONPATH="$SCRIPT_DIR" "$PY" -c "
 import sys
 from storage.db import connect, accept_all
 conn = connect()
-counts = accept_all(conn, int(sys.argv[1]))
+counts = accept_all(conn, browser=(sys.argv[1] or None))
 print(f'accepted: visual={counts[\"visual\"]} a11y={counts[\"a11y\"]}')
 conn.close()
-" "$run_id"
+" "$browser"
 }
 
 cmd_wipe_baselines() {
