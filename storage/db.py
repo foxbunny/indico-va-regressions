@@ -336,12 +336,15 @@ def get_a11y_baseline_meta(conn, baseline_id):
 
 # --- accept / reset ---------------------------------------------------------
 
-def accept_visual(conn, page_id, persona, browser):
+def accept_visual(conn, page_id, persona, browser, *, commit=True):
     """Promote the current visual diff to a new baseline.
 
     Captures the diff blob + pixel counts onto the new baseline row, plus a
     pointer to the baseline this one replaced, so the per-page history view
     can render each accepted step as its own viewable diff.
+
+    Pass ``commit=False`` to run inside a larger transaction (e.g. a bulk
+    accept) -- the caller is then responsible for committing.
     """
     diff = conn.execute(
         '''SELECT image, width, height, baseline_id,
@@ -363,11 +366,12 @@ def accept_visual(conn, page_id, persona, browser):
         'DELETE FROM visual_diffs WHERE page_id = ? AND persona = ? AND browser = ?',
         (page_id, persona, browser),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return True
 
 
-def accept_a11y(conn, page_id, persona):
+def accept_a11y(conn, page_id, persona, *, commit=True):
     """Promote the current a11y diff to a new baseline. See accept_visual."""
     diff = conn.execute(
         '''SELECT tree_json, outline, node_count, baseline_id,
@@ -389,7 +393,8 @@ def accept_a11y(conn, page_id, persona):
         'DELETE FROM a11y_diffs WHERE page_id = ? AND persona = ?',
         (page_id, persona),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return True
 
 
@@ -409,12 +414,35 @@ def accept_all(conn, *, kind=None, browser=None):
                 (browser,),
             ).fetchall()
         for r in rows:
-            if accept_visual(conn, r['page_id'], r['persona'], r['browser']):
+            if accept_visual(conn, r['page_id'], r['persona'], r['browser'], commit=False):
                 counts['visual'] += 1
     if kind in (None, 'a11y') and browser is None:
         for r in conn.execute('SELECT page_id, persona FROM a11y_diffs').fetchall():
-            if accept_a11y(conn, r['page_id'], r['persona']):
+            if accept_a11y(conn, r['page_id'], r['persona'], commit=False):
                 counts['a11y'] += 1
+    conn.commit()
+    return counts
+
+
+def accept_selected(conn, items):
+    """Accept a caller-supplied set of diffs in a single transaction.
+
+    ``items`` is a list of ``{page_id, persona, browsers, a11y}`` dicts (as the
+    review UI builds them per selected row): ``browsers`` is the list of visual
+    browsers to accept for that key, and ``a11y`` is whether to accept the a11y
+    diff. Missing diffs are silently skipped, so the returned counts reflect
+    only the rows that actually existed.
+    """
+    counts = {'visual': 0, 'a11y': 0}
+    for item in items:
+        page_id = item['page_id']
+        persona = item['persona']
+        for browser in item.get('browsers') or []:
+            if accept_visual(conn, page_id, persona, browser, commit=False):
+                counts['visual'] += 1
+        if item.get('a11y') and accept_a11y(conn, page_id, persona, commit=False):
+            counts['a11y'] += 1
+    conn.commit()
     return counts
 
 

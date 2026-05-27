@@ -100,6 +100,23 @@ def api_accept_a11y(page_id, persona):
         conn.close()
 
 
+@app.route('/api/diffs/accept-selected', methods=['POST'])
+def api_accept_selected():
+    """Accept a caller-supplied set of diffs in one request/transaction.
+
+    Body: ``{"items": [{"page_id", "persona", "browsers": [...], "a11y": bool}]}``.
+    """
+    payload = request.get_json(silent=True) or {}
+    items = payload.get('items')
+    if not isinstance(items, list):
+        abort(400, 'items must be a list')
+    conn = get_conn()
+    try:
+        return jsonify(store.accept_selected(conn, items))
+    finally:
+        conn.close()
+
+
 @app.route('/api/diffs/accept-all', methods=['POST'])
 def api_accept_all():
     kind = request.args.get('kind')

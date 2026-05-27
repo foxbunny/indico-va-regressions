@@ -268,16 +268,20 @@ async function acceptSelected() {
     return;
   }
   if (!confirm(`Promote ${cbs.length} selected proposal(s) to baseline?`)) return;
-  for (const cb of cbs) {
+  const items = cbs.map(cb => {
     const {pageId, persona, visualBrowsers, hasA11y} = cb.dataset;
-    const browsers = visualBrowsers ? visualBrowsers.split(',') : [];
-    for (const browser of browsers) {
-      await fetchJson(`/api/diffs/visual/${browser}/${pageId}/${persona}/accept`, {method: 'POST'});
-    }
-    if (hasA11y === 'true') {
-      await fetchJson(`/api/diffs/a11y/${pageId}/${persona}/accept`, {method: 'POST'});
-    }
-  }
+    return {
+      page_id: pageId,
+      persona,
+      browsers: visualBrowsers ? visualBrowsers.split(',') : [],
+      a11y: hasA11y === 'true',
+    };
+  });
+  await fetchJson('/api/diffs/accept-selected', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({items}),
+  });
   await renderDiffs();
 }
 
