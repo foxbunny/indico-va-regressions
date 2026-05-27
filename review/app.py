@@ -115,6 +115,24 @@ def api_accept_all():
         conn.close()
 
 
+@app.route('/api/diffs/revert-all', methods=['POST'])
+def api_revert_all():
+    """Inverse of accept-all: pop each baseline's most recent accept back into a
+    pending diff. Returns counts per modality (0 for entries with nothing to
+    revert)."""
+    kind = request.args.get('kind')
+    browser = request.args.get('browser')
+    if kind not in (None, 'visual', 'a11y'):
+        abort(400, 'kind must be visual or a11y')
+    if browser is not None and kind == 'a11y':
+        abort(400, 'browser filter does not apply to a11y')
+    conn = get_conn()
+    try:
+        return jsonify(store.revert_all(conn, kind=kind, browser=browser))
+    finally:
+        conn.close()
+
+
 # --- baselines (history) ----------------------------------------------------
 
 @app.route('/api/baselines')

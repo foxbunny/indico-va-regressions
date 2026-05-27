@@ -437,6 +437,107 @@ def reset_a11y_baseline(conn, page_id, persona):
     return cur.rowcount > 0
 
 
+def revert_visual(conn, page_id, persona, browser):
+    """Undo the most recent accept for this visual key.
+
+    The inverse of ``accept_visual``: moves the current baseline back into
+    ``visual_diffs`` as a pending diff (reconstructed from the blob + prev
+    pointer the accept stored) and deletes that baseline row, so the baseline
+    it replaced becomes current again. Returns False when there is nothing to
+    revert -- the current baseline is an original capture (``prev_baseline_id``
+    is NULL, so no diff to restore) or a pending diff already exists for the key
+    (a later run superseded the accept; we won't clobber it).
+    """
+    base = conn.execute(
+        '''SELECT id, image, width, height, captured_at, prev_baseline_id,
+                  diff_image, pixel_count, pixel_pct
+           FROM visual_baselines
+           WHERE page_id = ? AND persona = ? AND browser = ?
+           ORDER BY id DESC LIMIT 1''',
+        (page_id, persona, browser),
+    ).fetchone()
+    if base is None or base['prev_baseline_id'] is None:
+        return False
+    if conn.execute(
+        'SELECT 1 FROM visual_diffs WHERE page_id = ? AND persona = ? AND browser = ?',
+        (page_id, persona, browser),
+    ).fetchone() is not None:
+        return False
+    conn.execute(
+        '''INSERT INTO visual_diffs
+               (page_id, persona, browser, baseline_id, image, width, height,
+                diff_image, pixel_count, pixel_pct, captured_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        (page_id, persona, browser, base['prev_baseline_id'], base['image'],
+         base['width'], base['height'], base['diff_image'], base['pixel_count'],
+         base['pixel_pct'], base['captured_at']),
+    )
+    conn.execute('DELETE FROM visual_baselines WHERE id = ?', (base['id'],))
+    conn.commit()
+    return True
+
+
+def revert_a11y(conn, page_id, persona):
+    """Undo the most recent accept for this a11y key. See revert_visual."""
+    base = conn.execute(
+        '''SELECT id, tree_json, outline, node_count, captured_at, prev_baseline_id,
+                  diff_text, added_count, removed_count
+           FROM a11y_baselines
+           WHERE page_id = ? AND persona = ?
+           ORDER BY id DESC LIMIT 1''',
+        (page_id, persona),
+    ).fetchone()
+    if base is None or base['prev_baseline_id'] is None:
+        return False
+    if conn.execute(
+        'SELECT 1 FROM a11y_diffs WHERE page_id = ? AND persona = ?',
+        (page_id, persona),
+    ).fetchone() is not None:
+        return False
+    conn.execute(
+        '''INSERT INTO a11y_diffs
+               (page_id, persona, baseline_id, tree_json, outline, node_count,
+                diff_text, added_count, removed_count, captured_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        (page_id, persona, base['prev_baseline_id'], base['tree_json'],
+         base['outline'], base['node_count'], base['diff_text'],
+         base['added_count'], base['removed_count'], base['captured_at']),
+    )
+    conn.execute('DELETE FROM a11y_baselines WHERE id = ?', (base['id'],))
+    conn.commit()
+    return True
+
+
+def revert_all(conn, *, kind=None, browser=None):
+    """Undo the most recent accept for every key, restoring pending diffs.
+
+    The inverse of ``accept_all``. Reverts the current baseline of each key
+    that came from an accept (skips original captures and keys that already
+    have a pending diff). The optional `browser` filter only applies to visual
+    (a11y is chromium-only and not keyed by browser, so a browser filter skips
+    it). Returns counts per modality.
+    """
+    counts = {'visual': 0, 'a11y': 0}
+    if kind in (None, 'visual'):
+        if browser is None:
+            rows = conn.execute(
+                'SELECT DISTINCT page_id, persona, browser FROM visual_baselines'
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                'SELECT DISTINCT page_id, persona, browser FROM visual_baselines WHERE browser = ?',
+                (browser,),
+            ).fetchall()
+        for r in rows:
+            if revert_visual(conn, r['page_id'], r['persona'], r['browser']):
+                counts['visual'] += 1
+    if kind in (None, 'a11y') and browser is None:
+        for r in conn.execute('SELECT DISTINCT page_id, persona FROM a11y_baselines').fetchall():
+            if revert_a11y(conn, r['page_id'], r['persona']):
+                counts['a11y'] += 1
+    return counts
+
+
 def wipe_baselines(conn):
     # Diffs are computed relative to a baseline; without one their image blob
     # and pixel/line counts are meaningless. The FK uses ON DELETE SET NULL so

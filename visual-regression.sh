@@ -8,6 +8,8 @@
 #   review            launch the host-side Flask review UI on port 8002
 #   accept-all [--browser <name>]
 #                     bulk-accept every open diff (optionally one browser only)
+#   revert [--browser <name>] [--kind visual|a11y]
+#                     undo the most recent accept per key, restoring pending diffs
 #   wipe-baselines    drop both baseline tables (with confirmation)
 #   shell             open a bash shell in the runner container
 #   logs              tail the Indico server logs
@@ -157,6 +159,26 @@ conn.close()
 " "$browser"
 }
 
+cmd_revert() {
+  require_py
+  local browser="" kind=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --browser) browser="${2:-}"; shift 2 ;;
+      --kind)    kind="${2:-}"; shift 2 ;;
+      *) color err "usage: $0 revert [--browser <name>] [--kind visual|a11y]"; exit 1 ;;
+    esac
+  done
+  PYTHONPATH="$SCRIPT_DIR" "$PY" -c "
+import sys
+from storage.db import connect, revert_all
+conn = connect()
+counts = revert_all(conn, kind=(sys.argv[1] or None), browser=(sys.argv[2] or None))
+print(f'reverted: visual={counts[\"visual\"]} a11y={counts[\"a11y\"]}')
+conn.close()
+" "$kind" "$browser"
+}
+
 cmd_wipe_baselines() {
   require_py
   read -r -p "Drop all baselines? [y/N] " ans
@@ -198,6 +220,7 @@ main() {
     setup)          shift; cmd_setup "$@" ;;
     review)         shift; cmd_review "$@" ;;
     accept-all)     shift; cmd_accept_all "$@" ;;
+    revert)         shift; cmd_revert "$@" ;;
     wipe-baselines) shift; cmd_wipe_baselines "$@" ;;
     shell)          shift; cmd_shell "$@" ;;
     logs)           shift; cmd_logs "$@" ;;

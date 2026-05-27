@@ -368,9 +368,14 @@ async function renderBaselines() {
   breadcrumb.textContent = '';
   app.replaceChildren(navLinks('baselines'), el('p', {}, 'Loading…'));
   const data = await fetchJson('/api/baselines');
+  const hasBaselines = data.visual.length + data.a11y.length > 0;
   app.replaceChildren(
     navLinks('baselines'),
     el('h2', {}, 'All baselines'),
+    hasBaselines ? el('div', {class: 'diff-toolbar'},
+      el('button', {class: 'revert-btn', onclick: revertAll},
+        icon('undo'), ' Revert last accept'),
+    ) : null,
     el('h3', {class: 'section-title'}, `Visual (${data.visual.length})`),
     baselinesTable('visual', data.visual),
     el('h3', {class: 'section-title'}, `Accessibility (${data.a11y.length})`),
@@ -492,6 +497,23 @@ async function resetBaseline(kind, pageId, persona, browser) {
     : `/api/baselines/a11y/${pageId}/${persona}/reset`;
   await fetchJson(url, {method: 'POST'});
   location.hash = '#/baselines';
+}
+
+// Bulk undo — the inverse of accept-all. Pops every baseline's most recent
+// accept back into a pending diff, then lands on the open-diffs view so the
+// restored proposals are right there. Entries with nothing to revert (an
+// original capture, or one that already has a pending diff) are left untouched.
+async function revertAll() {
+  if (!confirm('Undo the most recent accept for every baseline?\n\n' +
+               'Each affected entry reverts to its previous baseline and the change ' +
+               'reappears as a pending diff. Entries with nothing to undo are left alone.')) return;
+  const counts = await fetchJson('/api/diffs/revert-all', {method: 'POST'});
+  const n = (counts.visual || 0) + (counts.a11y || 0);
+  if (n === 0) {
+    alert('Nothing to revert — no baseline had a previous accept to undo.');
+    return;
+  }
+  location.hash = '#/';
 }
 
 function buildSyncedViewer({baselineSrc, proposalSrc, hasBaseline}) {

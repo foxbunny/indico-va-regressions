@@ -211,6 +211,7 @@ a {
 
 .diff-toolbar button.accept { background: #2e7d32; color: white; border-color: #2e7d32; }
 .diff-toolbar button.reset  { background: #6d4c41; color: white; border-color: #6d4c41; }
+.diff-toolbar button.revert-btn { background: #ef6c00; color: white; border-color: #ef6c00; }
 .diff-toolbar button:hover { filter: brightness(1.08); }
 
 .nav-tabs {
