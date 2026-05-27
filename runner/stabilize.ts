@@ -66,5 +66,10 @@ export async function waitForStable(page: Page): Promise<void> {
     LOADER_SELECTORS,
     {timeout: 5_000}
   ).catch(() => {});
-  await page.mouse.move(0, 0);
+  // Park the synthetic cursor outside the viewport so nothing keeps :hover.
+  // (0, 0) lands on the top-left element (logo/skip-link/header); negative
+  // coords put the pointer off-screen, and both Chromium and Firefox dispatch
+  // the mouseout that clears any prior hover. The OS cursor isn't captured in
+  // screenshots, so only the :hover CSS state matters here.
+  await page.mouse.move(-10, -10);
 }
