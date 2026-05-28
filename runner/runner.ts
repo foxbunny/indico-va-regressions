@@ -26,6 +26,11 @@ const ROOT = resolve(__dirname, '..');
 const PAGES_PATH = resolve(ROOT, 'config', 'pages.json');
 const MANIFEST_PATH = resolve(ROOT, 'output', 'manifest.json');
 
+interface PageAction {
+  click?: string;
+  waitFor?: string;
+}
+
 interface PageEntry {
   id: string;
   module: string;
@@ -36,6 +41,15 @@ interface PageEntry {
   fullPage?: boolean;
   waitFor?: string;
   mask?: string[];
+  actions?: PageAction[];
+}
+
+async function runActions(page: Page, actions: PageAction[] | undefined): Promise<void> {
+  if (!actions) return;
+  for (const action of actions) {
+    if (action.click) await page.click(action.click, {timeout: 5_000});
+    if (action.waitFor) await page.waitForSelector(action.waitFor, {timeout: 5_000});
+  }
 }
 
 function loadPages(): PageEntry[] {
@@ -260,6 +274,8 @@ async function main() {
             console.error(`  navigate failed: ${String(err)}`);
             continue;
           }
+
+          await runActions(page, entry.actions);
 
           const captured = await capture(page, entry, doA11y);
 

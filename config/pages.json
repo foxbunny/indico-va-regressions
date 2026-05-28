@@ -101,5 +101,15 @@
     "module": "admin",
     "path": "/admin/users/",
     "personas": ["admin"]
+  },
+  {
+    "id": "admin-users-create-dialog",
+    "module": "admin",
+    "path": "/admin/users/",
+    "personas": ["admin"],
+    "actions": [
+      {"click": "a.icon-plus[data-ajax-dialog]"},
+      {"waitFor": ".ui-dialog"}
+    ]
   }
 ]

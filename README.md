@@ -10,7 +10,7 @@ Room booking is out of scope.
 
 - Docker and Docker Compose v2
 - The Indico source checkout (anywhere; default lookup is `../indico`)
-- An `indico-python` wrapper on PATH (used by the review UI and host helpers). The repo's `feedback_indico_python_wrapper.md` memory describes the pattern.
+- An `indico-python` wrapper on PATH (used by the review UI and host helpers).
 
 No host-level Postgres, Redis, npm, or Playwright install required — those all live in containers built on first `setup`.
 
@@ -22,7 +22,7 @@ No host-level Postgres, Redis, npm, or Playwright install required — those all
 
 This builds two images:
 - `indico` — Indico's own Dockerfile, used to run the test server. Built from `${INDICO_SRC}/Dockerfile`.
-- `runner` — `mcr.microsoft.com/playwright:v1.49.0-jammy` + the runner's npm dependencies, baked into `/opt/runner/node_modules` so the runtime bind-mount doesn't shadow them.
+- `runner` — `mcr.microsoft.com/playwright:v1.59.1-jammy` + the runner's npm dependencies, baked into `/opt/runner/node_modules` so the runtime bind-mount doesn't shadow them.
 
 It also initialises the empty `baselines.db` SQLite file with the schema.
 
@@ -38,8 +38,15 @@ You can also skip `setup` — the default subcommand will `--build` on demand.
 ./visual-regression.sh review
 # → http://127.0.0.1:8002
 
-# Bulk-accept everything in a run from the CLI.
-./visual-regression.sh accept-all 3
+# Bulk-accept every open diff from the CLI. Optionally scope by browser.
+./visual-regression.sh accept-all
+./visual-regression.sh accept-all --browser chromium
+
+# Undo the most recent accept per key — the inverse of accept-all. Restores
+# the previous baseline and re-creates the pending diff row. Optionally scope
+# by browser and/or kind.
+./visual-regression.sh revert
+./visual-regression.sh revert --browser firefox --kind visual
 
 # Wipe baselines (with confirm) — next run is treated as the new initial baseline.
 ./visual-regression.sh wipe-baselines
@@ -83,6 +90,7 @@ All gitignored:
 - `baselines.db` — SQLite file with baselines, snapshots, diffs, and run history. Persistent across runs.
 - `output/runtime/` — the test Indico instance's log, cache, temp, and storage (bind-mounted into the indico container).
 - `output/manifest.json` — seed-time logical-name → DB-id mapping (e.g. `conferenceEventId → 3`).
+- `output/auth/<persona>.json` — Playwright `storageState` per non-anonymous persona, written once at the start of each run by `runner/auth.ts`.
 
 Postgres data lives in a container tmpfs — gone the moment the stack comes down, which is what we want (every run starts from a clean DB).
 
@@ -92,9 +100,9 @@ Postgres data lives in a container tmpfs — gone the moment the stack comes dow
 2. **Server clock**: `hooks/run_indico.py` wraps the Indico CLI with `freezegun`, so Python-side `now_utc()` calls resolve to `2026-06-15T12:00:00+00:00`. Indico timestamps default to `now_utc` (see Indico's `modules/events/models/events.py`), so server-rendered relative dates ("in 3 days") are deterministic. Postgres-side `NOW()` is not patched, but Indico doesn't use it for any rendered column.
 3. **Seed scenarios**: `seed/scenarios/*.py` create personas, categories, and events. They call Indico's `operations` modules with `session.set_session_user(admin)` inside a `test_request_context` so logging and signals run normally.
 4. **Page catalogue**: `config/pages.json` is a flat list of `{id, module, path, personas, capture, …}`. Path templates use placeholders resolved from `output/manifest.json`.
-5. **Runner**: `runner/runner.ts` (Playwright + tsx) logs each non-anonymous persona in once via the form POST, stores a `storageState`, then iterates pages × personas. For each it captures both a full-page screenshot and `page.accessibility.snapshot({interestingOnly: true})`. Pixel diffs use `pixelmatch`; a11y diffs are unified text diffs over canonical JSON (sorted keys, default-pruning).
-6. **Storage**: parallel `visual_*` and `a11y_*` tables in `baselines.db`; the `runs` table is shared. Status flow per `(page, persona, kind)`: `new` → `unchanged` / `changed` / `accepted` / `rejected`. A page can be `unchanged` in one modality and `changed` in the other.
-7. **Review UI**: `review/app.py` is a thin Flask JSON API + static file server (runs on the host, not in docker). Frontend is a single vanilla-JS SPA at `review/static/`. Visual diffs show baseline / actual / diff side-by-side; a11y diffs show the unified text diff with `+`/`-` line highlighting. Accept and reject act independently per modality.
+5. **Runner**: `runner/runner.ts` (Playwright + tsx) logs each non-anonymous persona in once via the form POST, stores a `storageState`, then loops over browsers (chromium and firefox by default) and inside each over pages × personas. For each it captures a full-page screenshot, and — in chromium only — an accessibility tree via CDP `Accessibility.getFullAXTree` (Playwright 1.59 removed `page.accessibility`, and CDP is chromium-only). `buildA11yTree` splices ignored nodes' descendants in place of themselves so the result reads like the screen-reader outline. Pixel diffs use `pixelmatch`; a11y diffs are unified text diffs over canonical JSON (sorted keys, default-pruning).
+6. **Storage**: parallel `visual_*` and `a11y_*` tables in `baselines.db`. Visual keys on `(page, persona, browser)` so chromium and firefox keep separate chains; a11y keys on `(page, persona)`. Status flow per `(page, persona, modality)`: `new` → `unchanged` / `changed` / `accepted` / `rejected`. A page can be `unchanged` in one modality and `changed` in the other.
+7. **Review UI**: `review/app.py` is a thin Flask JSON API + static file server (runs on the host, not in docker). Frontend is a single vanilla-JS SPA at `review/static/`. Visual diffs show baseline / actual / diff side-by-side; a11y diffs show the unified text diff with `+`/`-` line highlighting. Beyond the per-entry accept, the UI exposes **Accept selected** (promote a caller-supplied set in one transaction), **Accept all**, and **Revert last accept** (the inverse of accept-all). There is no "reject" — leaving the diff row alone is the reject; it stays until a future run supersedes or clears it.
 
 ## Determinism
 
