@@ -63,6 +63,15 @@ def _migrate(conn):
     add_col('a11y_baselines', 'added_count', 'INTEGER NOT NULL DEFAULT 0')
     add_col('a11y_baselines', 'removed_count', 'INTEGER NOT NULL DEFAULT 0')
 
+    # run_log_id ties each row to the capture run that produced it -- the batch
+    # key for revert. New rows get it from the runner; existing rows stay NULL
+    # (the capture run can't be reconstructed from counts alone) and a NULL is
+    # simply not groupable, so revert skips it. See revert_all.
+    add_col('visual_baselines', 'run_log_id', 'INTEGER')
+    add_col('visual_diffs', 'run_log_id', 'INTEGER')
+    add_col('a11y_baselines', 'run_log_id', 'INTEGER')
+    add_col('a11y_diffs', 'run_log_id', 'INTEGER')
+
     # visual_diffs needs (page_id, persona, browser) as its PK so chromium and
     # firefox can coexist. SQLite can't ALTER a PRIMARY KEY, so when we detect
     # the pre-browser schema, rebuild the table. Existing rows are backfilled
@@ -343,11 +352,14 @@ def accept_visual(conn, page_id, persona, browser, *, commit=True):
     pointer to the baseline this one replaced, so the per-page history view
     can render each accepted step as its own viewable diff.
 
-    Pass ``commit=False`` to run inside a larger transaction (e.g. a bulk
-    accept) -- the caller is then responsible for committing.
+    The new baseline inherits the diff's ``captured_at`` and ``run_log_id`` --
+    i.e. it records when/which run *captured* this content, NOT when it was
+    accepted. That keeps ``captured_at`` honest and lets ``revert_all`` group by
+    the capture run. Pass ``commit=False`` to run inside a larger transaction
+    (e.g. a bulk accept) -- the caller is then responsible for committing.
     """
     diff = conn.execute(
-        '''SELECT image, width, height, baseline_id,
+        '''SELECT image, width, height, baseline_id, captured_at, run_log_id,
                   diff_image, pixel_count, pixel_pct
            FROM visual_diffs WHERE page_id = ? AND persona = ? AND browser = ?''',
         (page_id, persona, browser),
@@ -357,10 +369,11 @@ def accept_visual(conn, page_id, persona, browser, *, commit=True):
     conn.execute(
         '''INSERT INTO visual_baselines
                (page_id, persona, browser, image, width, height, captured_at,
-                prev_baseline_id, diff_image, pixel_count, pixel_pct)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-        (page_id, persona, browser, diff['image'], diff['width'], diff['height'], now_iso(),
-         diff['baseline_id'], diff['diff_image'], diff['pixel_count'], diff['pixel_pct']),
+                prev_baseline_id, diff_image, pixel_count, pixel_pct, run_log_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        (page_id, persona, browser, diff['image'], diff['width'], diff['height'],
+         diff['captured_at'], diff['baseline_id'], diff['diff_image'],
+         diff['pixel_count'], diff['pixel_pct'], diff['run_log_id']),
     )
     conn.execute(
         'DELETE FROM visual_diffs WHERE page_id = ? AND persona = ? AND browser = ?',
@@ -374,7 +387,7 @@ def accept_visual(conn, page_id, persona, browser, *, commit=True):
 def accept_a11y(conn, page_id, persona, *, commit=True):
     """Promote the current a11y diff to a new baseline. See accept_visual."""
     diff = conn.execute(
-        '''SELECT tree_json, outline, node_count, baseline_id,
+        '''SELECT tree_json, outline, node_count, baseline_id, captured_at, run_log_id,
                   diff_text, added_count, removed_count
            FROM a11y_diffs WHERE page_id = ? AND persona = ?''',
         (page_id, persona),
@@ -384,10 +397,11 @@ def accept_a11y(conn, page_id, persona, *, commit=True):
     conn.execute(
         '''INSERT INTO a11y_baselines
                (page_id, persona, tree_json, outline, node_count, captured_at,
-                prev_baseline_id, diff_text, added_count, removed_count)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-        (page_id, persona, diff['tree_json'], diff['outline'], diff['node_count'], now_iso(),
-         diff['baseline_id'], diff['diff_text'], diff['added_count'], diff['removed_count']),
+                prev_baseline_id, diff_text, added_count, removed_count, run_log_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        (page_id, persona, diff['tree_json'], diff['outline'], diff['node_count'],
+         diff['captured_at'], diff['baseline_id'], diff['diff_text'],
+         diff['added_count'], diff['removed_count'], diff['run_log_id']),
     )
     conn.execute(
         'DELETE FROM a11y_diffs WHERE page_id = ? AND persona = ?',
@@ -477,7 +491,7 @@ def revert_visual(conn, page_id, persona, browser):
     (a later run superseded the accept; we won't clobber it).
     """
     base = conn.execute(
-        '''SELECT id, image, width, height, captured_at, prev_baseline_id,
+        '''SELECT id, image, width, height, captured_at, prev_baseline_id, run_log_id,
                   diff_image, pixel_count, pixel_pct
            FROM visual_baselines
            WHERE page_id = ? AND persona = ? AND browser = ?
@@ -494,11 +508,11 @@ def revert_visual(conn, page_id, persona, browser):
     conn.execute(
         '''INSERT INTO visual_diffs
                (page_id, persona, browser, baseline_id, image, width, height,
-                diff_image, pixel_count, pixel_pct, captured_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                diff_image, pixel_count, pixel_pct, captured_at, run_log_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
         (page_id, persona, browser, base['prev_baseline_id'], base['image'],
          base['width'], base['height'], base['diff_image'], base['pixel_count'],
-         base['pixel_pct'], base['captured_at']),
+         base['pixel_pct'], base['captured_at'], base['run_log_id']),
     )
     conn.execute('DELETE FROM visual_baselines WHERE id = ?', (base['id'],))
     conn.commit()
@@ -508,7 +522,7 @@ def revert_visual(conn, page_id, persona, browser):
 def revert_a11y(conn, page_id, persona):
     """Undo the most recent accept for this a11y key. See revert_visual."""
     base = conn.execute(
-        '''SELECT id, tree_json, outline, node_count, captured_at, prev_baseline_id,
+        '''SELECT id, tree_json, outline, node_count, captured_at, prev_baseline_id, run_log_id,
                   diff_text, added_count, removed_count
            FROM a11y_baselines
            WHERE page_id = ? AND persona = ?
@@ -525,44 +539,88 @@ def revert_a11y(conn, page_id, persona):
     conn.execute(
         '''INSERT INTO a11y_diffs
                (page_id, persona, baseline_id, tree_json, outline, node_count,
-                diff_text, added_count, removed_count, captured_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                diff_text, added_count, removed_count, captured_at, run_log_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
         (page_id, persona, base['prev_baseline_id'], base['tree_json'],
          base['outline'], base['node_count'], base['diff_text'],
-         base['added_count'], base['removed_count'], base['captured_at']),
+         base['added_count'], base['removed_count'], base['captured_at'], base['run_log_id']),
     )
     conn.execute('DELETE FROM a11y_baselines WHERE id = ?', (base['id'],))
     conn.commit()
     return True
 
 
-def revert_all(conn, *, kind=None, browser=None):
-    """Undo the most recent accept for every key, restoring pending diffs.
+def _revertable_visual(conn, browser=None):
+    """Top-of-chain visual baselines that came from an accept and aren't already
+    superseded by a pending diff -- the keys a revert may touch, each tagged with
+    its capture ``run_log_id``. Optional browser filter."""
+    q = '''
+        SELECT b.page_id, b.persona, b.browser, b.run_log_id
+        FROM visual_baselines b
+        WHERE b.id = (SELECT MAX(id) FROM visual_baselines
+                      WHERE page_id = b.page_id AND persona = b.persona AND browser = b.browser)
+          AND b.prev_baseline_id IS NOT NULL
+          AND b.run_log_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM visual_diffs d
+                          WHERE d.page_id = b.page_id AND d.persona = b.persona
+                            AND d.browser = b.browser)
+    '''
+    params = ()
+    if browser is not None:
+        q += ' AND b.browser = ?'
+        params = (browser,)
+    return conn.execute(q, params).fetchall()
 
-    The inverse of ``accept_all``. Reverts the current baseline of each key
-    that came from an accept (skips original captures and keys that already
-    have a pending diff). The optional `browser` filter only applies to visual
-    (a11y is chromium-only and not keyed by browser, so a browser filter skips
-    it). Returns counts per modality.
+
+def _revertable_a11y(conn):
+    """Top-of-chain a11y baselines eligible for revert. See _revertable_visual."""
+    return conn.execute('''
+        SELECT b.page_id, b.persona, b.run_log_id
+        FROM a11y_baselines b
+        WHERE b.id = (SELECT MAX(id) FROM a11y_baselines
+                      WHERE page_id = b.page_id AND persona = b.persona)
+          AND b.prev_baseline_id IS NOT NULL
+          AND b.run_log_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM a11y_diffs d
+                          WHERE d.page_id = b.page_id AND d.persona = b.persona)
+    ''').fetchall()
+
+
+def revert_all(conn, *, kind=None, browser=None):
+    """Undo the most recently captured run's accepts, restoring its pending diffs.
+
+    The inverse of ``accept_all`` scoped to a single capture run. Every row
+    carries the ``run_log_id`` of the run that captured it (stamped by the
+    runner, preserved through accept), so the records of one capture run share
+    it -- regardless of how many accept clicks promoted them. Among the
+    revertable baselines (came from an accept, not already superseded by a
+    pending diff, and with a known run), this finds the largest ``run_log_id``
+    (run_log.id is autoincrement, so that's the most recently captured run) and
+    reverts exactly the keys carrying it, across both modalities. This is what
+    keeps a revert from popping the top accept off every chain at once.
+
+    Baselines with a NULL ``run_log_id`` (written before the column existed and
+    not backfilled) aren't groupable and are skipped.
+
+    Filters: `kind` limits to one modality; `browser` limits to one visual
+    engine (and skips a11y, which isn't keyed by browser). The target run is
+    chosen within the filtered candidate set. Returns counts per modality.
     """
     counts = {'visual': 0, 'a11y': 0}
-    if kind in (None, 'visual'):
-        if browser is None:
-            rows = conn.execute(
-                'SELECT DISTINCT page_id, persona, browser FROM visual_baselines'
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                'SELECT DISTINCT page_id, persona, browser FROM visual_baselines WHERE browser = ?',
-                (browser,),
-            ).fetchall()
-        for r in rows:
-            if revert_visual(conn, r['page_id'], r['persona'], r['browser']):
-                counts['visual'] += 1
-    if kind in (None, 'a11y') and browser is None:
-        for r in conn.execute('SELECT DISTINCT page_id, persona FROM a11y_baselines').fetchall():
-            if revert_a11y(conn, r['page_id'], r['persona']):
-                counts['a11y'] += 1
+    visual = _revertable_visual(conn, browser) if kind in (None, 'visual') else []
+    a11y = _revertable_a11y(conn) if (kind in (None, 'a11y') and browser is None) else []
+
+    run_ids = [r['run_log_id'] for r in visual] + [r['run_log_id'] for r in a11y]
+    if not run_ids:
+        return counts
+    target = max(run_ids)
+
+    for r in visual:
+        if r['run_log_id'] == target and revert_visual(conn, r['page_id'], r['persona'], r['browser']):
+            counts['visual'] += 1
+    for r in a11y:
+        if r['run_log_id'] == target and revert_a11y(conn, r['page_id'], r['persona']):
+            counts['a11y'] += 1
     return counts
 
 

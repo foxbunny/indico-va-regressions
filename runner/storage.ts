@@ -67,6 +67,35 @@ export function getCurrentVisualBaseline(
   return row ?? null;
 }
 
+// Lightweight existence check used by --only-missing mode -- skips fetching the
+// image blob since we only need a yes/no.
+export function hasVisualBaseline(
+  db: Database.Database,
+  pageId: string,
+  persona: string,
+  browser: string,
+): boolean {
+  const row = db.prepare(`
+    SELECT 1 FROM visual_baselines
+    WHERE page_id = ? AND persona = ? AND browser = ?
+    LIMIT 1
+  `).get(pageId, persona, browser);
+  return row !== undefined;
+}
+
+export function insertVisualBaseline(
+  db: Database.Database,
+  args: {pageId: string; persona: string; browser: string; image: Buffer; width: number; height: number; runLogId: number}
+): void {
+  db.prepare(`
+    INSERT INTO visual_baselines (page_id, persona, browser, image, width, height, captured_at, run_log_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    args.pageId, args.persona, args.browser, args.image,
+    args.width, args.height, nowIso(), args.runLogId,
+  );
+}
+
 export function upsertVisualDiff(
   db: Database.Database,
   args: {
@@ -80,12 +109,13 @@ export function upsertVisualDiff(
     diffImage: Buffer | null;
     pixelCount: number;
     pixelPct: number;
+    runLogId: number;
   }
 ): void {
   db.prepare(`
     INSERT INTO visual_diffs (page_id, persona, browser, baseline_id, image, width, height,
-                              diff_image, pixel_count, pixel_pct, captured_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                              diff_image, pixel_count, pixel_pct, captured_at, run_log_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(page_id, persona, browser) DO UPDATE SET
       baseline_id = excluded.baseline_id,
       image       = excluded.image,
@@ -94,11 +124,12 @@ export function upsertVisualDiff(
       diff_image  = excluded.diff_image,
       pixel_count = excluded.pixel_count,
       pixel_pct   = excluded.pixel_pct,
-      captured_at = excluded.captured_at
+      captured_at = excluded.captured_at,
+      run_log_id  = excluded.run_log_id
   `).run(
     args.pageId, args.persona, args.browser, args.baselineId,
     args.image, args.width, args.height,
-    args.diffImage, args.pixelCount, args.pixelPct, nowIso(),
+    args.diffImage, args.pixelCount, args.pixelPct, nowIso(), args.runLogId,
   );
 }
 
@@ -129,6 +160,32 @@ export function getCurrentA11yBaseline(
   return row ?? null;
 }
 
+export function hasA11yBaseline(
+  db: Database.Database,
+  pageId: string,
+  persona: string,
+): boolean {
+  const row = db.prepare(`
+    SELECT 1 FROM a11y_baselines
+    WHERE page_id = ? AND persona = ?
+    LIMIT 1
+  `).get(pageId, persona);
+  return row !== undefined;
+}
+
+export function insertA11yBaseline(
+  db: Database.Database,
+  args: {pageId: string; persona: string; treeJson: string; outline: string; nodeCount: number; runLogId: number}
+): void {
+  db.prepare(`
+    INSERT INTO a11y_baselines (page_id, persona, tree_json, outline, node_count, captured_at, run_log_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    args.pageId, args.persona, args.treeJson, args.outline,
+    args.nodeCount, nowIso(), args.runLogId,
+  );
+}
+
 export function upsertA11yDiff(
   db: Database.Database,
   args: {
@@ -141,12 +198,13 @@ export function upsertA11yDiff(
     diffText: string | null;
     addedCount: number;
     removedCount: number;
+    runLogId: number;
   }
 ): void {
   db.prepare(`
     INSERT INTO a11y_diffs (page_id, persona, baseline_id, tree_json, outline,
-                            node_count, diff_text, added_count, removed_count, captured_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            node_count, diff_text, added_count, removed_count, captured_at, run_log_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(page_id, persona) DO UPDATE SET
       baseline_id   = excluded.baseline_id,
       tree_json     = excluded.tree_json,
@@ -155,11 +213,12 @@ export function upsertA11yDiff(
       diff_text     = excluded.diff_text,
       added_count   = excluded.added_count,
       removed_count = excluded.removed_count,
-      captured_at   = excluded.captured_at
+      captured_at   = excluded.captured_at,
+      run_log_id    = excluded.run_log_id
   `).run(
     args.pageId, args.persona, args.baselineId,
     args.treeJson, args.outline, args.nodeCount,
-    args.diffText, args.addedCount, args.removedCount, nowIso(),
+    args.diffText, args.addedCount, args.removedCount, nowIso(), args.runLogId,
   );
 }
 

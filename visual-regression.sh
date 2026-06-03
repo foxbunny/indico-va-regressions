@@ -8,8 +8,16 @@
 #   review            launch the host-side Flask review UI on port 8002
 #   accept-all [--browser <name>]
 #                     bulk-accept every open diff (optionally one browser only)
+#   backfill [filter flags]
+#                     capture only the (page, persona, browser, modality)
+#                     combos that have no baseline yet, and write them
+#                     straight to *_baselines. Use it for the very first run
+#                     (empty DB) and for incremental backfill after adding new
+#                     pages/personas/scenarios. Accepts the same filter flags
+#                     as the default run.
 #   revert [--browser <name>] [--kind visual|a11y]
-#                     undo the most recent accept per key, restoring pending diffs
+#                     undo the most recently captured run's accepts (every row
+#                     carries its capture run), restoring their pending diffs
 #   wipe-baselines    drop both baseline tables (with confirmation)
 #   shell             open a bash shell in the runner container
 #   logs              tail the Indico server logs
@@ -159,6 +167,39 @@ conn.close()
 " "$browser"
 }
 
+cmd_backfill() {
+  require_docker
+  require_indico_src
+
+  local runner_args=(--only-missing)
+  while (( $# > 0 )); do
+    case "$1" in
+      --filter|--persona|--page|--browser)
+        runner_args+=("$1" "$2"); shift ;;
+      --only-visual|--only-a11y)
+        runner_args+=("$1") ;;
+      *) color err "unknown flag $1"; exit 1 ;;
+    esac
+    shift
+  done
+
+  ensure_baselines_db
+
+  color info "starting indico stack (drops+seeds indico_visual on boot)"
+  "${DC[@]}" up -d --wait indico
+
+  color info "capturing baselines for missing entries only"
+  set +e
+  "${DC[@]}" run --rm --build runner "${runner_args[@]}"
+  local rc=$?
+  set -e
+
+  color info "tearing down stack"
+  "${DC[@]}" down --remove-orphans >/dev/null
+
+  exit "$rc"
+}
+
 cmd_revert() {
   require_py
   local browser="" kind=""
@@ -220,6 +261,7 @@ main() {
     setup)          shift; cmd_setup "$@" ;;
     review)         shift; cmd_review "$@" ;;
     accept-all)     shift; cmd_accept_all "$@" ;;
+    backfill)       shift; cmd_backfill "$@" ;;
     revert)         shift; cmd_revert "$@" ;;
     wipe-baselines) shift; cmd_wipe_baselines "$@" ;;
     shell)          shift; cmd_shell "$@" ;;

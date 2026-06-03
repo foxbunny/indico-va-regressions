@@ -32,7 +32,15 @@ CREATE TABLE IF NOT EXISTS visual_baselines (
     prev_baseline_id  INTEGER REFERENCES visual_baselines(id) ON DELETE SET NULL,
     diff_image   BLOB,
     pixel_count  INTEGER NOT NULL DEFAULT 0,
-    pixel_pct    REAL NOT NULL DEFAULT 0.0
+    pixel_pct    REAL NOT NULL DEFAULT 0.0,
+    -- The run_log row of the capture that produced this content. Stamped by the
+    -- runner at capture, copied verbatim onto the baseline on accept (so it
+    -- records the *capture* run, not the accept), and carried back to the diff
+    -- on revert. This is the batch key: every row from one capture run shares
+    -- it, so a revert undoes exactly that run's accepts. Logical FK to
+    -- run_log.id (no constraint -- run_log rows are never deleted). NULL for
+    -- rows written before this column existed.
+    run_log_id   INTEGER
 );
 
 -- The (page_id, persona, browser, id DESC) index is created by _migrate after
@@ -51,6 +59,7 @@ CREATE TABLE IF NOT EXISTS visual_diffs (
     pixel_count  INTEGER NOT NULL DEFAULT 0,
     pixel_pct    REAL NOT NULL DEFAULT 0.0,
     captured_at  TEXT NOT NULL,
+    run_log_id   INTEGER,  -- capture run; see visual_baselines.run_log_id
     PRIMARY KEY (page_id, persona, browser)
 );
 
@@ -66,7 +75,8 @@ CREATE TABLE IF NOT EXISTS a11y_baselines (
     prev_baseline_id  INTEGER REFERENCES a11y_baselines(id) ON DELETE SET NULL,
     diff_text     TEXT,
     added_count   INTEGER NOT NULL DEFAULT 0,
-    removed_count INTEGER NOT NULL DEFAULT 0
+    removed_count INTEGER NOT NULL DEFAULT 0,
+    run_log_id    INTEGER  -- capture run; see visual_baselines.run_log_id
 );
 
 CREATE INDEX IF NOT EXISTS idx_a11y_baselines_pp
@@ -83,6 +93,7 @@ CREATE TABLE IF NOT EXISTS a11y_diffs (
     added_count   INTEGER NOT NULL DEFAULT 0,
     removed_count INTEGER NOT NULL DEFAULT 0,
     captured_at   TEXT NOT NULL,
+    run_log_id    INTEGER,  -- capture run; see visual_baselines.run_log_id
     PRIMARY KEY (page_id, persona)
 );
 

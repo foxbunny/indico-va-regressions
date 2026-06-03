@@ -42,9 +42,17 @@ You can also skip `setup` — the default subcommand will `--build` on demand.
 ./visual-regression.sh accept-all
 ./visual-regression.sh accept-all --browser chromium
 
-# Undo the most recent accept per key — the inverse of accept-all. Restores
-# the previous baseline and re-creates the pending diff row. Optionally scope
-# by browser and/or kind.
+# Capture only entries that have no baseline yet and write them straight to
+# *_baselines (no review step). Handles both the empty-DB first run and
+# incremental backfill after adding pages / personas / scenarios. Accepts the
+# same filter flags as the default run.
+./visual-regression.sh backfill
+./visual-regression.sh backfill --browser chromium
+./visual-regression.sh backfill --filter events --persona admin
+
+# Undo the most recently captured run's accepts — the inverse of accept-all.
+# Every row carries the run that captured it, so this reverts exactly that run's
+# changes back to pending diffs. Optionally scope by browser and/or kind.
 ./visual-regression.sh revert
 ./visual-regression.sh revert --browser firefox --kind visual
 
@@ -63,7 +71,9 @@ You can also skip `setup` — the default subcommand will `--build` on demand.
 
 ### First run produces baselines
 
-On the very first run, no baselines exist so every entry is recorded as `new`. The suite exits non-zero. Open the review UI, sanity-check that pages render correctly (no error pages, no missing data, layout intact; a11y trees have an `h1`, landmarks present), then "Accept everything". The accepted rows become the canonical baselines, and subsequent runs diff against them.
+On a fresh DB, run `./visual-regression.sh backfill` — every (page, persona, browser, modality) combo is missing, so the runner captures all of them and writes them straight to `*_baselines`. Then launch `./visual-regression.sh review` and sanity-check the captured baselines (pages render correctly, no error pages, layout intact; a11y trees have an `h1`, landmarks present). After that, `./visual-regression.sh` diffs subsequent runs against those baselines.
+
+The same command also handles incremental backfill — after adding pages, personas, or seed scenarios, `backfill` only captures the missing combos and leaves existing baselines untouched.
 
 ### Filters
 
@@ -102,7 +112,7 @@ Postgres data lives in a container tmpfs — gone the moment the stack comes dow
 4. **Page catalogue**: `config/pages.json` is a flat list of `{id, module, path, personas, capture, …}`. Path templates use placeholders resolved from `output/manifest.json`.
 5. **Runner**: `runner/runner.ts` (Playwright + tsx) logs each non-anonymous persona in once via the form POST, stores a `storageState`, then loops over browsers (chromium and firefox by default) and inside each over pages × personas. For each it captures a full-page screenshot, and — in chromium only — an accessibility tree via CDP `Accessibility.getFullAXTree` (Playwright 1.59 removed `page.accessibility`, and CDP is chromium-only). `buildA11yTree` splices ignored nodes' descendants in place of themselves so the result reads like the screen-reader outline. Pixel diffs use `pixelmatch`; a11y diffs are unified text diffs over canonical JSON (sorted keys, default-pruning).
 6. **Storage**: parallel `visual_*` and `a11y_*` tables in `baselines.db`. Visual keys on `(page, persona, browser)` so chromium and firefox keep separate chains; a11y keys on `(page, persona)`. Status flow per `(page, persona, modality)`: `new` → `unchanged` / `changed` / `accepted` / `rejected`. A page can be `unchanged` in one modality and `changed` in the other.
-7. **Review UI**: `review/app.py` is a thin Flask JSON API + static file server (runs on the host, not in docker). Frontend is a single vanilla-JS SPA at `review/static/`. Visual diffs show baseline / actual / diff side-by-side; a11y diffs show the unified text diff with `+`/`-` line highlighting. Beyond the per-entry accept, the UI exposes **Accept selected** (promote a caller-supplied set in one transaction), **Accept all**, and **Revert last accept** (the inverse of accept-all). There is no "reject" — leaving the diff row alone is the reject; it stays until a future run supersedes or clears it.
+7. **Review UI**: `review/app.py` is a thin Flask JSON API + static file server (runs on the host, not in docker). Frontend is a single vanilla-JS SPA at `review/static/`. Visual diffs show baseline / actual / diff side-by-side; a11y diffs show the unified text diff with `+`/`-` line highlighting. Beyond the per-entry accept, the UI exposes **Accept selected** (promote a caller-supplied set in one transaction) and **Revert last batch** (the inverse of accept-all, scoped to the most recently captured run). There is no "reject" — leaving the diff row alone is the reject; it stays until a future run supersedes or clears it. Establishing initial baselines is the CLI's job: `./visual-regression.sh backfill` captures only the missing combos and writes them straight to `*_baselines`, bypassing the diff/review step entirely.
 
 ## Determinism
 
