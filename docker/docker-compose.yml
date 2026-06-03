@@ -45,8 +45,10 @@ services:
     volumes:
       - ${INDICO_SRC:-../../indico}:/home/indico/src:rw
       - ..:/regressions:rw
-    ports:
-      - "8003:8000"
+    # No host port mapping: the runner reaches Indico over the internal Docker
+    # network (http://indico:8000), so a regression run takes no host ports.
+    # Use `./visual-regression.sh shell` or `docker compose exec` if you need to
+    # poke at the server from inside the network.
     entrypoint: ["/regressions/docker/entrypoint-indico.sh"]
     healthcheck:
       # Indico's canonicalize_url middleware rejects requests whose Host header
