@@ -402,9 +402,12 @@ async function main() {
   // In --only-missing mode every "new" entry is a baseline that was just
   // established, not a diff to review -- the run is always a success. Outside
   // that mode, anything new or changed is something the reviewer should see.
+  // Exit 3 is the "diffs present" signal -- deliberately distinct from 1/2 so
+  // the wrapper script can tell it apart from a crash (2) or a docker-level
+  // failure (usually 1) and not report "diffs present" when nothing ran.
   if (onlyMissing) process.exit(0);
   const openDiffs = counts.changedVisual + counts.newVisual + counts.changedA11y + counts.newA11y;
-  process.exit(openDiffs > 0 ? 1 : 0);
+  process.exit(openDiffs > 0 ? 3 : 0);
 }
 
 main().catch(err => {

@@ -125,19 +125,29 @@ cmd_default() {
   "${DC[@]}" up -d --wait indico
 
   color info "running snapshot + diff"
+  # --no-deps: indico is already up (and freshly seeded) from the `up --wait`
+  # above. Without it, `run --build` also re-bakes the indico image, whose
+  # huge npm-ci layer is a prime buildkit-GC eviction target — rebuilding it
+  # is slow and network-dependent and has nothing to do with capturing
+  # (the indico container bind-mounts the live source anyway). Rebuild it
+  # explicitly with `setup` when its dependencies actually change.
   set +e
-  "${DC[@]}" run --rm --build runner "${runner_args[@]}"
+  "${DC[@]}" run --rm --build --no-deps runner "${runner_args[@]}"
   local rc=$?
   set -e
 
   color info "tearing down stack"
   "${DC[@]}" down --remove-orphans >/dev/null
 
-  if (( rc == 0 )); then
-    color ok "no diffs — exit 0"
-  else
-    color warn "diffs present — review with: $0 review"
-  fi
+  # Runner exit codes: 0 = no diffs, 3 = diffs present, 2 = runner crashed.
+  # Anything else means the runner never ran (docker/compose/build failure) —
+  # don't claim "diffs present" when nothing was captured.
+  case "$rc" in
+    0) color ok "no diffs — exit 0" ;;
+    3) color warn "diffs present — review with: $0 review" ;;
+    2) color err "runner crashed — no results were recorded; see output above" ;;
+    *) color err "run failed before capturing anything (exit $rc) — likely a docker/build error; see output above" ;;
+  esac
   exit "$rc"
 }
 
@@ -189,8 +199,10 @@ cmd_backfill() {
   "${DC[@]}" up -d --wait indico
 
   color info "capturing baselines for missing entries only"
+  # --no-deps for the same reason as the default run: indico is already up,
+  # and re-baking its image here is slow, network-dependent, and unnecessary.
   set +e
-  "${DC[@]}" run --rm --build runner "${runner_args[@]}"
+  "${DC[@]}" run --rm --build --no-deps runner "${runner_args[@]}"
   local rc=$?
   set -e
 
