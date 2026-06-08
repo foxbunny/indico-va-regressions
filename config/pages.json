@@ -111,5 +111,46 @@
       {"click": "a.icon-plus[data-ajax-dialog]"},
       {"waitFor": ".ui-dialog"}
     ]
+  },
+  {
+    "id": "event-meeting-pdf-export-dialog",
+    "module": "events",
+    "path": "/event/{meetingEventId}/",
+    "personas": ["anonymous", "manager"],
+    "actions": [
+      {"click": "button.icon-file-pdf[data-ajax-dialog]"},
+      {"waitFor": ".ui-dialog"}
+    ]
+  },
+  {
+    "id": "user-tokens-create-dialog",
+    "module": "users",
+    "path": "/user/tokens/",
+    "personas": ["participant"],
+    "actions": [
+      {"click": "button[data-ajax-dialog][data-href*='token']"},
+      {"waitFor": ".ui-dialog"}
+    ]
+  },
+  {
+    "id": "category-create-subcategory-dialog",
+    "module": "categories",
+    "path": "/category/{rootCategoryId}/manage/",
+    "personas": ["admin"],
+    "actions": [
+      {"click": "button.icon-plus[data-ajax-dialog][data-title='New category']"},
+      {"waitFor": ".ui-dialog"}
+    ]
+  },
+  {
+    "id": "contribution-types-dialog",
+    "module": "events",
+    "path": "/event/{conferenceEventId}/manage/contributions/",
+    "personas": ["manager"],
+    "actions": [
+      {"click": "#contributions-settings-dropdown"},
+      {"click": "ul.i-dropdown a[data-ajax-dialog][data-title='Manage contribution types']"},
+      {"waitFor": ".ui-dialog"}
+    ]
   }
 ]
