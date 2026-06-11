@@ -261,14 +261,10 @@ function updateSelectAllState() {
   headerCb.indeterminate = checked > 0 && checked < cbs.length;
 }
 
-async function acceptSelected() {
-  const cbs = Array.from(document.querySelectorAll('.row-cb:checked'));
-  if (cbs.length === 0) {
-    alert('No rows selected.');
-    return;
-  }
-  if (!confirm(`Promote ${cbs.length} selected proposal(s) to baseline?`)) return;
-  const items = cbs.map(cb => {
+// Build the {page_id, persona, browsers, a11y} item list the bulk endpoints
+// expect from a set of row checkboxes.
+function rowItems(cbs) {
+  return cbs.map(cb => {
     const {pageId, persona, visualBrowsers, hasA11y} = cb.dataset;
     return {
       page_id: pageId,
@@ -277,18 +273,125 @@ async function acceptSelected() {
       a11y: hasA11y === 'true',
     };
   });
+}
+
+async function acceptSelected() {
+  const cbs = Array.from(document.querySelectorAll('.row-cb:checked'));
+  if (cbs.length === 0) {
+    alert('No rows selected.');
+    return;
+  }
+  if (!confirm(`Promote ${cbs.length} selected proposal(s) to baseline?`)) return;
   await fetchJson('/api/diffs/accept-selected', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({items}),
+    body: JSON.stringify({items: rowItems(cbs)}),
   });
   await renderDiffs();
+}
+
+// Delete drops the diff rows without promoting them — the baseline still holds,
+// so a later run re-files the diff if the page still differs. Useful for
+// clearing stale proposals left over from an earlier, differently-scoped run.
+async function deleteSelected() {
+  const cbs = Array.from(document.querySelectorAll('.row-cb:checked'));
+  if (cbs.length === 0) {
+    alert('No rows selected.');
+    return;
+  }
+  if (!confirm(`Delete ${cbs.length} selected diff(s)?\n\n` +
+               'The baseline is left untouched; a future run re-files the diff ' +
+               'if the page still differs.')) return;
+  await fetchJson('/api/diffs/delete-selected', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({items: rowItems(cbs)}),
+  });
+  await renderDiffs();
+}
+
+async function deleteAll() {
+  const scoped = diffsState.runFilter !== 'all';
+  const label = scoped ? 'the diffs from this run' : 'every open diff';
+  if (!confirm(`Delete ${label}?\n\n` +
+               'Baselines are left untouched; a future run re-files any diff ' +
+               'whose page still differs.')) return;
+  const qs = scoped ? `?run=${encodeURIComponent(diffsState.runFilter)}` : '';
+  await fetchJson(`/api/diffs/delete-all${qs}`, {method: 'POST'});
+  await renderDiffs();
+}
+
+// --- run filter -------------------------------------------------------------
+
+// Cached open-diff payload + current run filter, so changing the filter
+// re-renders from memory without re-hitting the API. runFilter is 'all', the
+// string 'none' (rows with no capture run), or a numeric run_log_id as a string.
+const diffsState = {data: {visual: [], a11y: []}, runsById: new Map(), runFilter: 'all'};
+
+// Distinct capture runs present across the open diffs, newest first, plus
+// whether any diff carries no run id.
+function distinctRuns(data) {
+  const ids = new Set();
+  let hasNull = false;
+  for (const d of [...data.visual, ...data.a11y]) {
+    if (d.run_log_id == null) hasNull = true;
+    else ids.add(d.run_log_id);
+  }
+  return {ids: [...ids].sort((a, b) => b - a), hasNull};
+}
+
+function runLabel(id) {
+  const run = diffsState.runsById.get(id);
+  return run && run.started_at ? `Run #${id} — ${humanTime(run.started_at)}` : `Run #${id}`;
+}
+
+function applyRunFilter(data, runFilter) {
+  if (runFilter === 'all') return data;
+  const want = runFilter === 'none' ? null : Number(runFilter);
+  const match = d => (d.run_log_id ?? null) === want;
+  return {visual: data.visual.filter(match), a11y: data.a11y.filter(match)};
+}
+
+function runFilterControl(data) {
+  const {ids, hasNull} = distinctRuns(data);
+  const groups = ids.length + (hasNull ? 1 : 0);
+  // No diffs at all → no run slot.
+  if (groups === 0) return null;
+  // A single run can't be filtered — show it as a static label in the same
+  // slot the dropdown would occupy, so the buttons don't shift sides.
+  if (groups === 1) {
+    const text = ids.length ? runLabel(ids[0]) : '(no run id)';
+    return el('span', {class: 'run-filter-label'}, 'Run: ', el('span', {class: 'run-filter-static'}, text));
+  }
+  const sel = el('select', {
+    id: 'run-filter',
+    onchange: e => { diffsState.runFilter = e.target.value; renderDiffsView(); },
+  });
+  sel.appendChild(el('option', {value: 'all'}, 'All runs'));
+  for (const id of ids) sel.appendChild(el('option', {value: String(id)}, runLabel(id)));
+  if (hasNull) sel.appendChild(el('option', {value: 'none'}, '(no run id)'));
+  sel.value = diffsState.runFilter;
+  return el('label', {class: 'run-filter-label'}, 'Run: ', sel);
 }
 
 async function renderDiffs() {
   breadcrumb.textContent = '';
   app.replaceChildren(navLinks('diffs'), el('p', {}, 'Loading…'));
-  const data = await fetchJson('/api/diffs');
+  const [data, runs] = await Promise.all([
+    fetchJson('/api/diffs'),
+    fetchJson('/api/runs').catch(() => []),
+  ]);
+  diffsState.data = data;
+  diffsState.runsById = new Map(runs.map(r => [r.id, r]));
+  // Drop a stale filter (e.g. the run it pointed at no longer has open diffs).
+  const {ids, hasNull} = distinctRuns(data);
+  const valid = new Set(['all', ...ids.map(String), ...(hasNull ? ['none'] : [])]);
+  if (!valid.has(diffsState.runFilter)) diffsState.runFilter = 'all';
+  renderDiffsView();
+}
+
+function renderDiffsView() {
+  const data = applyRunFilter(diffsState.data, diffsState.runFilter);
   // Group visual rows by (page, persona) since the same key can now have one
   // per browser. a11y still has at most one row per (page, persona).
   const visualGroups = new Map();
@@ -311,23 +414,31 @@ async function renderDiffs() {
     .map(([b, n]) => `${n} ${b}`)
     .join(' + ');
 
+  const hasDiffs = totalVisual + totalA11y > 0;
+  const toolbarItems = [
+    runFilterControl(diffsState.data),
+    hasDiffs ? el('button', {onclick: () => selectRows('visual')}, 'Select all visual') : null,
+    hasDiffs ? el('button', {onclick: () => selectRows('a11y')}, 'Select all a11y') : null,
+    hasDiffs ? el('button', {class: 'accept', onclick: acceptSelected}, icon('check'), ' Accept selected') : null,
+    hasDiffs ? el('button', {class: 'delete-btn', onclick: deleteSelected}, icon('trash'), ' Delete selected') : null,
+    hasDiffs ? el('button', {class: 'delete-btn', onclick: deleteAll}, icon('trash'), ' Delete all') : null,
+  ].filter(Boolean);
+
   app.replaceChildren(
     navLinks('diffs'),
     el('h2', {}, `Open diffs`),
     el('p', {class: 'run-meta'},
       totalVisual + totalA11y === 0
-        ? 'Everything matches its baseline.'
+        ? (diffsState.runFilter === 'all'
+            ? 'Everything matches its baseline.'
+            : 'No open diffs for this run.')
         : el('span', {},
             `${totalVisual} visual open diff${totalVisual === 1 ? '' : 's'}`,
             browserSummary ? ` (${browserSummary})` : '',
             ` · ${totalA11y} a11y open diff${totalA11y === 1 ? '' : 's'}`,
           ),
     ),
-    totalVisual + totalA11y > 0 ? el('div', {class: 'diff-toolbar'},
-      el('button', {onclick: () => selectRows('visual')}, 'Select all visual'),
-      el('button', {onclick: () => selectRows('a11y')}, 'Select all a11y'),
-      el('button', {class: 'accept', onclick: acceptSelected}, icon('check'), ' Accept selected'),
-    ) : null,
+    toolbarItems.length ? el('div', {class: 'diff-toolbar'}, ...toolbarItems) : null,
     combinedDiffsTable(visualGroups, a11yMap),
   );
 }

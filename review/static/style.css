@@ -212,7 +212,29 @@ a {
 .diff-toolbar button.accept { background: #2e7d32; color: white; border-color: #2e7d32; }
 .diff-toolbar button.reset  { background: #6d4c41; color: white; border-color: #6d4c41; }
 .diff-toolbar button.revert-btn { background: #ef6c00; color: white; border-color: #ef6c00; }
+.diff-toolbar button.delete-btn { background: #c62828; color: white; border-color: #c62828; }
 .diff-toolbar button:hover { filter: brightness(1.08); }
+
+.run-filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  margin-right: auto;
+}
+
+.run-filter-label select {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.9rem;
+  border: 0.06em solid #ccc;
+  border-radius: 0.25rem;
+  background: white;
+}
+
+.run-filter-static {
+  font-weight: 600;
+  color: #444;
+}
 
 .nav-tabs {
   display: flex;

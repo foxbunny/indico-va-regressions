@@ -150,6 +150,53 @@ def api_revert_all():
         conn.close()
 
 
+@app.route('/api/diffs/delete-selected', methods=['POST'])
+def api_delete_selected():
+    """Drop a caller-supplied set of diffs (no promotion to baseline).
+
+    Body mirrors accept-selected: ``{"items": [{page_id, persona, browsers, a11y}]}``.
+    """
+    payload = request.get_json(silent=True) or {}
+    items = payload.get('items')
+    if not isinstance(items, list):
+        abort(400, 'items must be a list')
+    conn = get_conn()
+    try:
+        return jsonify(store.delete_selected(conn, items))
+    finally:
+        conn.close()
+
+
+@app.route('/api/diffs/delete-all', methods=['POST'])
+def api_delete_all():
+    """Drop every open diff, optionally scoped by kind / browser / run.
+
+    ``run`` is the capture run_log_id to scope to; the literal ``none`` targets
+    the rows with no run id (written before the column existed).
+    """
+    kind = request.args.get('kind')
+    browser = request.args.get('browser')
+    run = request.args.get('run')
+    if kind not in (None, 'visual', 'a11y'):
+        abort(400, 'kind must be visual or a11y')
+    if browser is not None and kind == 'a11y':
+        abort(400, 'browser filter does not apply to a11y')
+    kwargs = {'kind': kind, 'browser': browser}
+    if run is not None:
+        if run == 'none':
+            kwargs['run_log_id'] = None
+        else:
+            try:
+                kwargs['run_log_id'] = int(run)
+            except ValueError:
+                abort(400, 'run must be an integer or "none"')
+    conn = get_conn()
+    try:
+        return jsonify(store.delete_all(conn, **kwargs))
+    finally:
+        conn.close()
+
+
 # --- baselines (history) ----------------------------------------------------
 
 @app.route('/api/baselines')

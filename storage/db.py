@@ -142,7 +142,7 @@ def list_visual_diffs(conn):
     out = []
     for r in conn.execute(
         '''SELECT page_id, persona, browser, baseline_id, width, height,
-                  pixel_count, pixel_pct, captured_at,
+                  pixel_count, pixel_pct, captured_at, run_log_id,
                   diff_image IS NOT NULL AS has_diff_image
            FROM visual_diffs ORDER BY page_id, persona, browser'''
     ):
@@ -157,7 +157,7 @@ def list_a11y_diffs(conn):
     out = []
     for r in conn.execute(
         '''SELECT page_id, persona, baseline_id, node_count,
-                  added_count, removed_count, captured_at,
+                  added_count, removed_count, captured_at, run_log_id,
                   diff_text IS NOT NULL AS has_diff_text
            FROM a11y_diffs ORDER BY page_id, persona'''
     ):
@@ -456,6 +456,91 @@ def accept_selected(conn, items):
                 counts['visual'] += 1
         if item.get('a11y') and accept_a11y(conn, page_id, persona, commit=False):
             counts['a11y'] += 1
+    conn.commit()
+    return counts
+
+
+# --- delete diffs (drop without promoting) ----------------------------------
+
+# Sentinel so delete_all can tell "no run filter" (delete every run) apart from
+# run_log_id=None (delete only the rows with a NULL run, i.e. pre-column rows).
+_UNSET = object()
+
+
+def delete_visual_diff(conn, page_id, persona, browser, *, commit=True):
+    """Drop a visual diff row without touching its baseline. The baseline still
+    holds; the next run re-captures and re-files the diff if it still differs."""
+    cur = conn.execute(
+        'DELETE FROM visual_diffs WHERE page_id = ? AND persona = ? AND browser = ?',
+        (page_id, persona, browser),
+    )
+    if commit:
+        conn.commit()
+    return cur.rowcount > 0
+
+
+def delete_a11y_diff(conn, page_id, persona, *, commit=True):
+    """Drop an a11y diff row without touching its baseline. See delete_visual_diff."""
+    cur = conn.execute(
+        'DELETE FROM a11y_diffs WHERE page_id = ? AND persona = ?',
+        (page_id, persona),
+    )
+    if commit:
+        conn.commit()
+    return cur.rowcount > 0
+
+
+def delete_selected(conn, items):
+    """Delete a caller-supplied set of diffs in one transaction. Mirrors
+    ``accept_selected``'s ``{page_id, persona, browsers, a11y}`` item shape, but
+    drops the diff rows instead of promoting them. Returns counts per modality."""
+    counts = {'visual': 0, 'a11y': 0}
+    for item in items:
+        page_id = item['page_id']
+        persona = item['persona']
+        for browser in item.get('browsers') or []:
+            if delete_visual_diff(conn, page_id, persona, browser, commit=False):
+                counts['visual'] += 1
+        if item.get('a11y') and delete_a11y_diff(conn, page_id, persona, commit=False):
+            counts['a11y'] += 1
+    conn.commit()
+    return counts
+
+
+def delete_all(conn, *, kind=None, browser=None, run_log_id=_UNSET):
+    """Delete every open diff, optionally scoped. ``kind`` limits to one
+    modality; ``browser`` limits visual to one engine (and skips a11y, which
+    isn't keyed by browser); ``run_log_id`` limits to the diffs a single capture
+    run produced (pass ``None`` to target the pre-column rows that carry no run).
+    Returns counts per modality."""
+    counts = {'visual': 0, 'a11y': 0}
+
+    def run_clause(clauses, params):
+        if run_log_id is _UNSET:
+            return
+        if run_log_id is None:
+            clauses.append('run_log_id IS NULL')
+        else:
+            clauses.append('run_log_id = ?')
+            params.append(run_log_id)
+
+    if kind in (None, 'visual'):
+        clauses, params = [], []
+        if browser is not None:
+            clauses.append('browser = ?')
+            params.append(browser)
+        run_clause(clauses, params)
+        q = 'DELETE FROM visual_diffs'
+        if clauses:
+            q += ' WHERE ' + ' AND '.join(clauses)
+        counts['visual'] = conn.execute(q, params).rowcount  # noqa: S608
+    if kind in (None, 'a11y') and browser is None:
+        clauses, params = [], []
+        run_clause(clauses, params)
+        q = 'DELETE FROM a11y_diffs'
+        if clauses:
+            q += ' WHERE ' + ' AND '.join(clauses)
+        counts['a11y'] = conn.execute(q, params).rowcount  # noqa: S608
     conn.commit()
     return counts
 
