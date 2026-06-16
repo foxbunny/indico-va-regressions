@@ -25,6 +25,70 @@
     "personas": ["participant", "manager", "admin"]
   },
   {
+    "id": "user-dashboard-tooltip-management-active",
+    "module": "users",
+    "path": "/user/dashboard/",
+    "personas": ["manager"],
+    "hover": ".item-legend ind-with-tooltip:has(.icon-medal.active) >> nth=0",
+    "hoverWaitFor": "ind-with-tooltip[shown]"
+  },
+  {
+    "id": "user-dashboard-tooltip-management-inactive",
+    "module": "users",
+    "path": "/user/dashboard/",
+    "personas": ["manager"],
+    "hover": ".item-legend ind-with-tooltip:has(.icon-medal:not(.active)) >> nth=0",
+    "hoverWaitFor": "ind-with-tooltip[shown]"
+  },
+  {
+    "id": "user-dashboard-tooltip-reviewer-active",
+    "module": "users",
+    "path": "/user/dashboard/",
+    "personas": ["manager"],
+    "hover": ".item-legend ind-with-tooltip:has(.icon-user-reading.active) >> nth=0",
+    "hoverWaitFor": "ind-with-tooltip[shown]"
+  },
+  {
+    "id": "user-dashboard-tooltip-reviewer-inactive",
+    "module": "users",
+    "path": "/user/dashboard/",
+    "personas": ["manager"],
+    "hover": ".item-legend ind-with-tooltip:has(.icon-user-reading:not(.active)) >> nth=0",
+    "hoverWaitFor": "ind-with-tooltip[shown]"
+  },
+  {
+    "id": "user-dashboard-tooltip-attendee-active",
+    "module": "users",
+    "path": "/user/dashboard/",
+    "personas": ["manager"],
+    "hover": ".item-legend ind-with-tooltip:has(.icon-ticket.active) >> nth=0",
+    "hoverWaitFor": "ind-with-tooltip[shown]"
+  },
+  {
+    "id": "user-dashboard-tooltip-attendee-inactive",
+    "module": "users",
+    "path": "/user/dashboard/",
+    "personas": ["manager"],
+    "hover": ".item-legend ind-with-tooltip:has(.icon-ticket:not(.active)) >> nth=0",
+    "hoverWaitFor": "ind-with-tooltip[shown]"
+  },
+  {
+    "id": "user-dashboard-tooltip-favorited-active",
+    "module": "users",
+    "path": "/user/dashboard/",
+    "personas": ["manager"],
+    "hover": ".item-legend ind-with-tooltip:has(.icon-star.active) >> nth=0",
+    "hoverWaitFor": "ind-with-tooltip[shown]"
+  },
+  {
+    "id": "user-dashboard-tooltip-favorited-inactive",
+    "module": "users",
+    "path": "/user/dashboard/",
+    "personas": ["manager"],
+    "hover": ".item-legend ind-with-tooltip:has(.icon-star:not(.active)) >> nth=0",
+    "hoverWaitFor": "ind-with-tooltip[shown]"
+  },
+  {
     "id": "user-profile",
     "module": "users",
     "path": "/user/profile/",

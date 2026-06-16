@@ -40,12 +40,17 @@ interface PageEntry {
   module: string;
   path: string;
   personas: string[];
-  capture?: ('visual' | 'a11y')[];
   viewport?: {width: number; height: number};
   fullPage?: boolean;
   waitFor?: string;
   mask?: string[];
   actions?: PageAction[];
+  // Hover state to capture. Unlike `actions` (applied before stabilisation),
+  // the hover is (re)applied inside capture() after waitForStable parks the
+  // cursor off-screen — otherwise the parked cursor would clear it. Lets a
+  // hover-revealed UI (e.g. a tooltip) be a page in its own right.
+  hover?: string;
+  hoverWaitFor?: string;
 }
 
 async function runActions(page: Page, actions: PageAction[] | undefined): Promise<void> {
@@ -192,6 +197,22 @@ async function capture(
   withA11y: boolean,
 ): Promise<{image: Buffer; width: number; height: number; tree: any | undefined}> {
   await waitForStable(page);
+  // Apply any hover *after* stabilisation: waitForStable parks the cursor
+  // off-screen to clear stray :hover, so a hover set earlier would be gone.
+  // `>> nth=0` keeps the selector single-element (no strict-mode ambiguity).
+  if (pageEntry.hover) {
+    // Non-fatal: a hover that fails to reveal its target shouldn't abort the
+    // whole run. We still screenshot whatever state resulted, so the diff
+    // surfaces the problem instead of crashing.
+    try {
+      await page.hover(pageEntry.hover, {timeout: 5_000});
+      if (pageEntry.hoverWaitFor) {
+        await page.waitForSelector(pageEntry.hoverWaitFor, {timeout: 5_000});
+      }
+    } catch (err) {
+      console.warn(`  hover step failed for ${pageEntry.id}: ${String(err)}`);
+    }
+  }
   const mask = (pageEntry.mask ?? []).map(sel => page.locator(sel));
   const image = await page.screenshot({
     fullPage: pageEntry.fullPage ?? true,
@@ -272,9 +293,10 @@ async function main() {
           if (filterModule && filterModule !== entry.module) continue;
           if (filterPage && filterPage !== entry.id) continue;
           const url = baseUrl + resolvePath(entry.path, manifest);
-          const captureKinds = entry.capture ?? ['visual', 'a11y'];
-          let doVisual = captureKinds.includes('visual') && doVisualForBrowser;
-          let doA11y = captureKinds.includes('a11y') && doA11yForBrowser;
+          // Every page captures both modalities; the only gates are the
+          // engine (a11y is chromium-only) and the run-level --only-* flags.
+          let doVisual = doVisualForBrowser;
+          let doA11y = doA11yForBrowser;
           if (!doVisual && !doA11y) continue;
 
           // In --only-missing mode we skip combos that already have a baseline
