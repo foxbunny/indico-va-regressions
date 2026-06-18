@@ -13,7 +13,7 @@ def _bcrypt(password):
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
-def _create_user(*, email, first_name, last_name, password, is_admin=False):
+def _create_user(*, email, first_name, last_name, password, is_admin=False, affiliation='', phone=''):
     from indico.core.db import db
     from indico.modules.auth.models.identities import Identity
     from indico.modules.users.models.users import User
@@ -22,8 +22,8 @@ def _create_user(*, email, first_name, last_name, password, is_admin=False):
         first_name=first_name,
         last_name=last_name,
         title=0,
-        affiliation='',
-        phone='',
+        affiliation=affiliation,
+        phone=phone,
         address='',
         is_system=False,
         is_admin=is_admin,
@@ -73,6 +73,8 @@ def seed(ctx):
         first_name='Visual',
         last_name='Participant',
         password=personas['participant']['login']['password'],
+        affiliation='Visual Regression Institute',
+        phone='+1 202 555 0142',
     )
 
     ctx.remember('adminUserId', admin.id)
