@@ -89,6 +89,30 @@
     "hoverWaitFor": "ind-with-tooltip[shown]"
   },
   {
+    "id": "user-dashboard-tooltip-event-date",
+    "module": "users",
+    "path": "/user/dashboard/",
+    "personas": ["manager"],
+    "hover": "li:has(.item-legend) .event-date ind-with-tooltip >> nth=0",
+    "hoverWaitFor": "ind-with-tooltip[shown]"
+  },
+  {
+    "id": "user-dashboard-tooltip-unlisted-date",
+    "module": "users",
+    "path": "/user/dashboard/",
+    "personas": ["participant"],
+    "hover": "li:has(.unlisted-events-action) .event-date ind-with-tooltip >> nth=0",
+    "hoverWaitFor": "ind-with-tooltip[shown]"
+  },
+  {
+    "id": "user-dashboard-tooltip-category-date",
+    "module": "users",
+    "path": "/user/dashboard/",
+    "personas": ["participant"],
+    "hover": "li:has(.event-category) .event-date ind-with-tooltip >> nth=0",
+    "hoverWaitFor": "ind-with-tooltip[shown]"
+  },
+  {
     "id": "user-profile",
     "module": "users",
     "path": "/user/profile/",

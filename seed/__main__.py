@@ -23,7 +23,7 @@ from indico.core.db import db  # noqa: E402
 from indico.web.flask.app import make_app  # noqa: E402
 
 from seed.context import SeedContext  # noqa: E402
-from seed.scenarios import _common, dashboard_roles, events_display  # noqa: E402
+from seed.scenarios import _common, dashboard_listing, dashboard_roles, events_display  # noqa: E402
 from storage.db import apply_schema, connect  # noqa: E402
 
 
@@ -44,6 +44,9 @@ def main():
         db.session.commit()
         sys.stderr.write('[seed] running dashboard_roles\n')
         dashboard_roles.seed(ctx)
+        db.session.commit()
+        sys.stderr.write('[seed] running dashboard_listing\n')
+        dashboard_listing.seed(ctx)
         db.session.commit()
         ctx.write_manifest()
     sys.stderr.write('[seed] complete\n')
