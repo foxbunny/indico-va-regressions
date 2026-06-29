@@ -57,7 +57,9 @@ async function runActions(page: Page, actions: PageAction[] | undefined): Promis
   if (!actions) return;
   for (const action of actions) {
     if (action.click) await page.click(action.click, {timeout: 5_000});
-    if (action.waitFor) await page.waitForSelector(action.waitFor, {timeout: 5_000});
+    // The waitFor often gates on async content (e.g. an export URL fetched after
+    // a popup opens), so give it more room than a plain click.
+    if (action.waitFor) await page.waitForSelector(action.waitFor, {timeout: 15_000});
   }
 }
 
@@ -321,7 +323,16 @@ async function main() {
             continue;
           }
 
-          await runActions(page, entry.actions);
+          // Non-fatal: if the page's setup actions (e.g. opening a popup) fail,
+          // skip just this page rather than letting the throw abort the whole
+          // browser run — which would silently skip baselines for every page
+          // after it.
+          try {
+            await runActions(page, entry.actions);
+          } catch (err) {
+            console.warn(`  actions failed for ${entry.id}: ${String(err)} — skipping page`);
+            continue;
+          }
 
           const captured = await capture(page, entry, doA11y);
 
