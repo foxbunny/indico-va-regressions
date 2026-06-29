@@ -5,6 +5,7 @@ Run first, before any scenario that creates events.
 
 import bcrypt
 from pathlib import Path
+from uuid import NAMESPACE_DNS, uuid5
 
 PERSONAS_PATH = Path(__file__).resolve().parent.parent.parent / 'config' / 'personas.json'
 
@@ -32,6 +33,11 @@ def _create_user(*, email, first_name, last_name, password, is_admin=False, affi
         is_deleted=False,
     )
     user.email = email
+    # Deterministic signing secret so signed export URLs (?user_token=…) are
+    # constant across seed runs. The column defaults to a random uuid4(), which
+    # otherwise makes the iCal export popup's URL — and its a11y-tree value —
+    # differ every run.
+    user.signing_secret = str(uuid5(NAMESPACE_DNS, f'indico-visual-regression:{email}'))
     db.session.add(user)
     db.session.flush()
 
