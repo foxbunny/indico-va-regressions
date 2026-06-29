@@ -124,6 +124,18 @@ export async function waitForStable(page: Page): Promise<void> {
     LOADER_SELECTORS,
     {timeout: 5_000}
   ).catch(() => {});
+  // The legacy i-dropdown closes with jQuery's fadeOut (effect_off: 'fadeOut'),
+  // a JS opacity animation the stabilize CSS (transition-duration: 0) can't stop.
+  // A screenshot can catch it mid-fade, leaving a ghost dropdown over the page.
+  // Snap any in-flight jQuery animation to its end state and turn effects off so
+  // it can't recur.
+  await page.evaluate(() => {
+    const jq = (window as any).jQuery;
+    if (jq) {
+      if (jq.fx) jq.fx.off = true;
+      try { jq(':animated').finish(); } catch { /* no animations in flight */ }
+    }
+  }).catch(() => {});
   // Park the synthetic cursor outside the viewport so nothing keeps :hover.
   // (0, 0) lands on the top-left element (logo/skip-link/header); negative
   // coords put the pointer off-screen, and both Chromium and Firefox dispatch
