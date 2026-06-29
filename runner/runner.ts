@@ -7,7 +7,7 @@ import {parseArgs} from 'node:util';
 
 import {buildStorageStates, loadPersonas, newPersonaContext, Personas} from './auth.js';
 import {canonicalize, compareTrees, countNodes, outline} from './a11y_diff.js';
-import {installStabilizers, waitForStable} from './stabilize.js';
+import {installClipboardStub, installStabilizers, waitForStable} from './stabilize.js';
 import {
   clearA11yDiff,
   clearVisualDiff,
@@ -288,6 +288,7 @@ async function main() {
         const ctx = await newPersonaContext(browser, baseUrl, storageStates[personaName]);
         const page = await ctx.newPage();
         await installStabilizers(page, frozen);
+        await installClipboardStub(page);
 
         for (const entry of personaPages) {
           if (filterModule && filterModule !== entry.module) continue;

@@ -52,6 +52,64 @@ export async function installStabilizers(page: Page, frozenIso: string): Promise
   }, [STABILIZE_CSS, frozenIso] as const);
 }
 
+// The suite talks to Indico over plain http, so navigator.clipboard is absent
+// (it needs a secure context). Some UI only renders when it exists — e.g. the
+// iCal export popup's "Copy to clipboard" button. Defining the property from an
+// addInitScript did not stick, so instead we patch the document HTML as it
+// arrives over the wire and inject an inline <script> at the very top of <head>.
+// That script runs before any page script (React included) and gives
+// navigator.clipboard a stub, so those controls render and can be captured.
+const CLIPBOARD_STUB_TAG =
+  '<script data-regression-clipboard-stub>' +
+  '(function(){try{if(!navigator.clipboard){' +
+  "Object.defineProperty(navigator,'clipboard',{configurable:true,value:{" +
+  'writeText:function(){return Promise.resolve();},' +
+  "readText:function(){return Promise.resolve('');}}});" +
+  '}}catch(e){}})();' +
+  '</script>';
+
+export async function installClipboardStub(page: Page): Promise<void> {
+  await page.route('**/*', async route => {
+    // Serve every request through route.fetch()+fulfill (the canonical body-
+    // rewrite pattern). We tried passing sub-resources through with
+    // continue()/fallback() and every one failed with net::ERR_FAILED once the
+    // route was registered — browser-side pass-through is broken here, but the
+    // Node-side route.fetch() reaches Indico fine. So we fetch in Node and serve
+    // the bytes back: binary assets are returned untouched; only the HTML
+    // document gets the clipboard <script> injected.
+    let response;
+    try {
+      response = await route.fetch();
+    } catch {
+      return route.fallback();
+    }
+    const contentType = response.headers()['content-type'] ?? '';
+    const isHtmlDoc =
+      route.request().resourceType() === 'document' && contentType.includes('text/html');
+    if (!isHtmlDoc) {
+      return route.fulfill({response});
+    }
+    let body = await response.text();
+    if (/<head[^>]*>/i.test(body)) {
+      body = body.replace(/<head([^>]*)>/i, `<head$1>${CLIPBOARD_STUB_TAG}`);
+    } else {
+      body = CLIPBOARD_STUB_TAG + body;
+    }
+    const headers = {...response.headers()};
+    // The original headers may advertise gzip and a stale length for the
+    // pre-edit body; drop both so the browser reads our plaintext correctly.
+    delete headers['content-encoding'];
+    delete headers['content-length'];
+    // Indico's CSP only allows inline scripts carrying a per-response nonce, so
+    // our injected <script> would be blocked. Drop the policy on the captured
+    // document — we're not testing CSP, and removing it only permits our stub
+    // (Indico's own nonced scripts keep working either way).
+    delete headers['content-security-policy'];
+    delete headers['content-security-policy-report-only'];
+    return route.fulfill({response, body, headers});
+  });
+}
+
 export async function waitForStable(page: Page): Promise<void> {
   await page.waitForLoadState('domcontentloaded');
   try {

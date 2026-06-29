@@ -113,6 +113,25 @@
     "hoverWaitFor": "ind-with-tooltip[shown]"
   },
   {
+    "id": "user-dashboard-tooltip-export",
+    "module": "users",
+    "path": "/user/dashboard/",
+    "personas": ["manager"],
+    "hover": "#dashboard-calendar-link ind-with-tooltip",
+    "hoverWaitFor": "#dashboard-calendar-link ind-with-tooltip[shown]"
+  },
+  {
+    "id": "user-dashboard-export-popup",
+    "module": "users",
+    "path": "/user/dashboard/",
+    "personas": ["manager"],
+    "actions": [
+      {"click": "#dashboard-calendar-link button"},
+      {"waitFor": ".ui.popup a.ui.button[href]"}
+    ],
+    "mask": [".ui.popup input"]
+  },
+  {
     "id": "user-profile",
     "module": "users",
     "path": "/user/profile/",
@@ -129,6 +148,43 @@
     "module": "categories",
     "path": "/",
     "personas": ["anonymous", "admin"]
+  },
+  {
+    "id": "category-root-export-popup",
+    "module": "categories",
+    "path": "/",
+    "personas": ["anonymous"],
+    "actions": [
+      {"click": ".i-button.icon-calendar"},
+      {"waitFor": ".ui.popup a.ui.button[href]"}
+    ],
+    "mask": [".ui.popup input"]
+  },
+  {
+    "id": "category-export-popup-copy-tip",
+    "module": "categories",
+    "path": "/",
+    "personas": ["anonymous"],
+    "actions": [
+      {"click": ".i-button.icon-calendar"},
+      {"waitFor": ".ui.popup a.ui.button[href]"}
+    ],
+    "hover": ".ui.action.input ind-with-tooltip",
+    "hoverWaitFor": ".ui.action.input ind-with-tooltip[shown]",
+    "mask": [".ui.popup input"]
+  },
+  {
+    "id": "category-export-popup-download-tip",
+    "module": "categories",
+    "path": "/",
+    "personas": ["anonymous"],
+    "actions": [
+      {"click": ".i-button.icon-calendar"},
+      {"waitFor": ".ui.popup a.ui.button[href]"}
+    ],
+    "hover": "ind-with-tooltip:has(a.ui.button)",
+    "hoverWaitFor": "ind-with-tooltip:has(a.ui.button)[shown]",
+    "mask": [".ui.popup input"]
   },
   {
     "id": "category-child-display",
