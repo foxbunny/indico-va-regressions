@@ -3,32 +3,49 @@
     "id": "home",
     "module": "core",
     "path": "/",
-    "personas": ["anonymous", "participant", "manager", "admin"]
+    "personas": [
+      "anonymous",
+      "participant",
+      "manager",
+      "admin"
+    ]
   },
   {
     "id": "auth-login",
     "module": "auth",
     "path": "/login/",
-    "personas": ["anonymous"]
+    "personas": [
+      "anonymous"
+    ]
   },
   {
     "id": "auth-register",
     "module": "auth",
     "path": "/register/",
-    "personas": ["anonymous"],
-    "mask": ["#captcha"]
+    "personas": [
+      "anonymous"
+    ],
+    "mask": [
+      "#captcha"
+    ]
   },
   {
     "id": "user-dashboard",
     "module": "users",
     "path": "/user/dashboard/",
-    "personas": ["participant", "manager", "admin"]
+    "personas": [
+      "participant",
+      "manager",
+      "admin"
+    ]
   },
   {
     "id": "user-dashboard-tooltip-management-active",
     "module": "users",
     "path": "/user/dashboard/",
-    "personas": ["manager"],
+    "personas": [
+      "manager"
+    ],
     "hover": ".item-legend ind-with-tooltip:has(.icon-medal.active) >> nth=0",
     "hoverWaitFor": "ind-with-tooltip[shown]"
   },
@@ -36,7 +53,9 @@
     "id": "user-dashboard-tooltip-management-inactive",
     "module": "users",
     "path": "/user/dashboard/",
-    "personas": ["manager"],
+    "personas": [
+      "manager"
+    ],
     "hover": ".item-legend ind-with-tooltip:has(.icon-medal:not(.active)) >> nth=0",
     "hoverWaitFor": "ind-with-tooltip[shown]"
   },
@@ -44,7 +63,9 @@
     "id": "user-dashboard-tooltip-reviewer-active",
     "module": "users",
     "path": "/user/dashboard/",
-    "personas": ["manager"],
+    "personas": [
+      "manager"
+    ],
     "hover": ".item-legend ind-with-tooltip:has(.icon-user-reading.active) >> nth=0",
     "hoverWaitFor": "ind-with-tooltip[shown]"
   },
@@ -52,7 +73,9 @@
     "id": "user-dashboard-tooltip-reviewer-inactive",
     "module": "users",
     "path": "/user/dashboard/",
-    "personas": ["manager"],
+    "personas": [
+      "manager"
+    ],
     "hover": ".item-legend ind-with-tooltip:has(.icon-user-reading:not(.active)) >> nth=0",
     "hoverWaitFor": "ind-with-tooltip[shown]"
   },
@@ -60,7 +83,9 @@
     "id": "user-dashboard-tooltip-attendee-active",
     "module": "users",
     "path": "/user/dashboard/",
-    "personas": ["manager"],
+    "personas": [
+      "manager"
+    ],
     "hover": ".item-legend ind-with-tooltip:has(.icon-ticket.active) >> nth=0",
     "hoverWaitFor": "ind-with-tooltip[shown]"
   },
@@ -68,7 +93,9 @@
     "id": "user-dashboard-tooltip-attendee-inactive",
     "module": "users",
     "path": "/user/dashboard/",
-    "personas": ["manager"],
+    "personas": [
+      "manager"
+    ],
     "hover": ".item-legend ind-with-tooltip:has(.icon-ticket:not(.active)) >> nth=0",
     "hoverWaitFor": "ind-with-tooltip[shown]"
   },
@@ -76,7 +103,9 @@
     "id": "user-dashboard-tooltip-favorited-active",
     "module": "users",
     "path": "/user/dashboard/",
-    "personas": ["manager"],
+    "personas": [
+      "manager"
+    ],
     "hover": ".item-legend ind-with-tooltip:has(.icon-star.active) >> nth=0",
     "hoverWaitFor": "ind-with-tooltip[shown]"
   },
@@ -84,7 +113,9 @@
     "id": "user-dashboard-tooltip-favorited-inactive",
     "module": "users",
     "path": "/user/dashboard/",
-    "personas": ["manager"],
+    "personas": [
+      "manager"
+    ],
     "hover": ".item-legend ind-with-tooltip:has(.icon-star:not(.active)) >> nth=0",
     "hoverWaitFor": "ind-with-tooltip[shown]"
   },
@@ -92,7 +123,9 @@
     "id": "user-dashboard-tooltip-event-date",
     "module": "users",
     "path": "/user/dashboard/",
-    "personas": ["manager"],
+    "personas": [
+      "manager"
+    ],
     "hover": "li:has(.item-legend) .event-date ind-with-tooltip >> nth=0",
     "hoverWaitFor": "ind-with-tooltip[shown]"
   },
@@ -100,7 +133,9 @@
     "id": "user-dashboard-tooltip-unlisted-date",
     "module": "users",
     "path": "/user/dashboard/",
-    "personas": ["participant"],
+    "personas": [
+      "participant"
+    ],
     "hover": "li:has(.unlisted-events-action) .event-date ind-with-tooltip >> nth=0",
     "hoverWaitFor": "ind-with-tooltip[shown]"
   },
@@ -108,7 +143,9 @@
     "id": "user-dashboard-tooltip-category-date",
     "module": "users",
     "path": "/user/dashboard/",
-    "personas": ["participant"],
+    "personas": [
+      "participant"
+    ],
     "hover": "li:has(.event-category) .event-date ind-with-tooltip >> nth=0",
     "hoverWaitFor": "ind-with-tooltip[shown]"
   },
@@ -116,7 +153,9 @@
     "id": "user-dashboard-tooltip-export",
     "module": "users",
     "path": "/user/dashboard/",
-    "personas": ["manager"],
+    "personas": [
+      "manager"
+    ],
     "hover": "#dashboard-calendar-link ind-with-tooltip",
     "hoverWaitFor": "#dashboard-calendar-link ind-with-tooltip[shown]"
   },
@@ -124,177 +163,503 @@
     "id": "user-dashboard-export-popup",
     "module": "users",
     "path": "/user/dashboard/",
-    "personas": ["manager"],
-    "actions": [
-      {"click": "#dashboard-calendar-link button"},
-      {"waitFor": ".ui.popup a.ui.button[href]"}
+    "personas": [
+      "manager"
     ],
-    "mask": [".ui.popup input"]
+    "actions": [
+      {
+        "click": "#dashboard-calendar-link button"
+      },
+      {
+        "waitFor": ".ui.popup a.ui.button[href]"
+      }
+    ],
+    "mask": [
+      ".ui.popup input"
+    ]
   },
   {
     "id": "user-profile",
     "module": "users",
     "path": "/user/profile/",
-    "personas": ["participant", "manager", "admin"]
+    "personas": [
+      "participant",
+      "manager",
+      "admin"
+    ]
   },
   {
     "id": "user-preferences",
     "module": "users",
     "path": "/user/preferences/",
-    "personas": ["participant", "manager", "admin"]
+    "personas": [
+      "participant",
+      "manager",
+      "admin"
+    ]
   },
   {
     "id": "category-root-display",
     "module": "categories",
     "path": "/",
-    "personas": ["anonymous", "admin"]
+    "personas": [
+      "anonymous",
+      "admin"
+    ]
   },
   {
     "id": "category-root-export-popup",
     "module": "categories",
     "path": "/",
-    "personas": ["anonymous"],
-    "actions": [
-      {"click": ".i-button.icon-calendar"},
-      {"waitFor": ".ui.popup a.ui.button[href]"}
+    "personas": [
+      "anonymous"
     ],
-    "mask": [".ui.popup input"]
+    "actions": [
+      {
+        "click": ".i-button.icon-calendar"
+      },
+      {
+        "waitFor": ".ui.popup a.ui.button[href]"
+      }
+    ],
+    "mask": [
+      ".ui.popup input"
+    ]
   },
   {
     "id": "category-export-popup-copy-tip",
     "module": "categories",
     "path": "/",
-    "personas": ["anonymous"],
+    "personas": [
+      "anonymous"
+    ],
     "actions": [
-      {"click": ".i-button.icon-calendar"},
-      {"waitFor": ".ui.popup a.ui.button[href]"}
+      {
+        "click": ".i-button.icon-calendar"
+      },
+      {
+        "waitFor": ".ui.popup a.ui.button[href]"
+      }
     ],
     "hover": ".ui.action.input ind-with-tooltip",
     "hoverWaitFor": ".ui.action.input ind-with-tooltip[shown]",
-    "mask": [".ui.popup input"]
+    "mask": [
+      ".ui.popup input"
+    ]
   },
   {
     "id": "category-export-popup-download-tip",
     "module": "categories",
     "path": "/",
-    "personas": ["anonymous"],
+    "personas": [
+      "anonymous"
+    ],
     "actions": [
-      {"click": ".i-button.icon-calendar"},
-      {"waitFor": ".ui.popup a.ui.button[href]"}
+      {
+        "click": ".i-button.icon-calendar"
+      },
+      {
+        "waitFor": ".ui.popup a.ui.button[href]"
+      }
     ],
     "hover": "ind-with-tooltip:has(a.ui.button)",
     "hoverWaitFor": "ind-with-tooltip:has(a.ui.button)[shown]",
-    "mask": [".ui.popup input"]
+    "mask": [
+      ".ui.popup input"
+    ]
   },
   {
     "id": "category-child-display",
     "module": "categories",
     "path": "/category/{childCategoryId}/",
-    "personas": ["anonymous", "admin"]
+    "personas": [
+      "anonymous",
+      "admin"
+    ]
   },
   {
     "id": "event-lecture-display",
     "module": "events",
     "path": "/event/{lectureEventId}/",
-    "personas": ["anonymous", "manager", "admin"]
+    "personas": [
+      "anonymous",
+      "manager",
+      "admin"
+    ]
   },
   {
     "id": "event-meeting-display",
     "module": "events",
     "path": "/event/{meetingEventId}/",
-    "personas": ["anonymous", "manager", "admin"]
+    "personas": [
+      "anonymous",
+      "manager",
+      "admin"
+    ]
+  },
+  {
+    "id": "event-meeting-display-tooltip-home",
+    "module": "events",
+    "path": "/event/{meetingEventId}/",
+    "personas": [
+      "manager"
+    ],
+    "hover": ".button-bar ind-with-tooltip:has(.icon-home)",
+    "hoverWaitFor": ".button-bar ind-with-tooltip:has(.icon-home)[shown]"
+  },
+  {
+    "id": "event-meeting-display-tooltip-theme",
+    "module": "events",
+    "path": "/event/{meetingEventId}/",
+    "personas": [
+      "manager"
+    ],
+    "hover": ".button-bar ind-with-tooltip:has(.icon-layout)",
+    "hoverWaitFor": ".button-bar ind-with-tooltip:has(.icon-layout)[shown]"
+  },
+  {
+    "id": "event-meeting-display-theme-dropdown",
+    "module": "events",
+    "path": "/event/{meetingEventId}/",
+    "personas": [
+      "manager"
+    ],
+    "actions": [
+      {
+        "click": ".button-bar ind-menu button"
+      },
+      {
+        "waitFor": ".button-bar ind-menu[open]"
+      }
+    ]
+  },
+  {
+    "id": "event-meeting-display-tooltip-favorite",
+    "module": "events",
+    "path": "/event/{meetingEventId}/",
+    "personas": [
+      "manager"
+    ],
+    "hover": "#favorite-link ind-with-tooltip",
+    "hoverWaitFor": "#favorite-link ind-with-tooltip[shown]"
+  },
+  {
+    "id": "event-meeting-display-tooltip-calendar",
+    "module": "events",
+    "path": "/event/{meetingEventId}/",
+    "personas": [
+      "manager"
+    ],
+    "hover": "#event-calendar-link ind-with-tooltip",
+    "hoverWaitFor": "#event-calendar-link ind-with-tooltip[shown]"
+  },
+  {
+    "id": "event-meeting-display-share-tooltip",
+    "module": "events",
+    "path": "/event/{meetingEventId}/",
+    "personas": [
+      "anonymous"
+    ],
+    "hover": "ind-share-widget img >> nth=0",
+    "hoverWaitFor": "ind-share-widget ind-with-tooltip[shown]"
+  },
+  {
+    "id": "event-meeting-display-share-popup",
+    "module": "events",
+    "path": "/event/{meetingEventId}/",
+    "personas": [
+      "anonymous"
+    ],
+    "actions": [
+      {
+        "click": "ind-share-widget img >> nth=0"
+      },
+      {
+        "waitFor": "a[href*='twitter.com/intent']"
+      }
+    ]
   },
   {
     "id": "event-conference-display",
     "module": "events",
     "path": "/event/{conferenceEventId}/",
-    "personas": ["anonymous", "participant", "manager", "admin"]
+    "personas": [
+      "anonymous",
+      "participant",
+      "manager",
+      "admin"
+    ]
   },
   {
     "id": "event-conference-contributions",
     "module": "events",
     "path": "/event/{conferenceEventId}/contributions/",
-    "personas": ["anonymous", "manager"]
+    "personas": [
+      "anonymous",
+      "manager"
+    ]
   },
   {
     "id": "event-conference-timetable",
     "module": "events",
     "path": "/event/{conferenceEventId}/timetable/",
-    "personas": ["anonymous", "manager"]
+    "personas": [
+      "anonymous",
+      "manager"
+    ]
   },
   {
     "id": "event-conference-manage",
     "module": "events",
     "path": "/event/{conferenceEventId}/manage/",
-    "personas": ["manager", "admin"]
+    "personas": [
+      "manager",
+      "admin"
+    ]
   },
   {
     "id": "search",
     "module": "search",
     "path": "/search/?q=conference",
-    "personas": ["anonymous", "admin"]
+    "personas": [
+      "anonymous",
+      "admin"
+    ]
   },
   {
     "id": "admin-dashboard",
     "module": "admin",
     "path": "/admin/",
-    "personas": ["admin"]
+    "personas": [
+      "admin"
+    ]
   },
   {
     "id": "admin-users",
     "module": "admin",
     "path": "/admin/users/",
-    "personas": ["admin"]
+    "personas": [
+      "admin"
+    ]
   },
   {
     "id": "admin-users-create-dialog",
     "module": "admin",
     "path": "/admin/users/",
-    "personas": ["admin"],
+    "personas": [
+      "admin"
+    ],
     "actions": [
-      {"click": "a.icon-plus[data-ajax-dialog]"},
-      {"waitFor": ".ui-dialog"}
+      {
+        "click": "a.icon-plus[data-ajax-dialog]"
+      },
+      {
+        "waitFor": ".ui-dialog"
+      }
     ]
   },
   {
     "id": "event-meeting-pdf-export-dialog",
     "module": "events",
     "path": "/event/{meetingEventId}/",
-    "personas": ["anonymous", "manager"],
+    "personas": [
+      "anonymous",
+      "manager"
+    ],
     "actions": [
-      {"click": "button.icon-file-pdf[data-ajax-dialog]"},
-      {"waitFor": ".ui-dialog"}
+      {
+        "click": "button.icon-file-pdf[data-ajax-dialog]"
+      },
+      {
+        "waitFor": ".ui-dialog"
+      }
     ]
   },
   {
     "id": "user-tokens-create-dialog",
     "module": "users",
     "path": "/user/tokens/",
-    "personas": ["participant"],
+    "personas": [
+      "participant"
+    ],
     "actions": [
-      {"click": "button[data-ajax-dialog][data-href*='token']"},
-      {"waitFor": ".ui-dialog"}
+      {
+        "click": "button[data-ajax-dialog][data-href*='token']"
+      },
+      {
+        "waitFor": ".ui-dialog"
+      }
     ]
   },
   {
     "id": "category-create-subcategory-dialog",
     "module": "categories",
     "path": "/category/{rootCategoryId}/manage/",
-    "personas": ["admin"],
+    "personas": [
+      "admin"
+    ],
     "actions": [
-      {"click": "button.icon-plus[data-ajax-dialog][data-title='New category']"},
-      {"waitFor": ".ui-dialog"}
+      {
+        "click": "button.icon-plus[data-ajax-dialog][data-title='New category']"
+      },
+      {
+        "waitFor": ".ui-dialog"
+      }
     ]
   },
   {
     "id": "contribution-types-dialog",
     "module": "events",
     "path": "/event/{conferenceEventId}/manage/contributions/",
-    "personas": ["manager"],
+    "personas": [
+      "manager"
+    ],
     "actions": [
-      {"click": "#contributions-settings-dropdown"},
-      {"click": "ul.i-dropdown a[data-ajax-dialog][data-title='Manage contribution types']"},
-      {"waitFor": ".ui-dialog"}
+      {
+        "click": "#contributions-settings-dropdown"
+      },
+      {
+        "click": "ul.i-dropdown a[data-ajax-dialog][data-title='Manage contribution types']"
+      },
+      {
+        "waitFor": ".ui-dialog"
+      }
     ]
+  },
+  {
+    "id": "event-persons-inline-form",
+    "module": "events",
+    "path": "/event/{personLinkEventId}/manage/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#event-settings-persons button.icon-edit"
+      },
+      {
+        "waitFor": "#person-link-field-person_link_data .ui.buttons"
+      }
+    ]
+  },
+  {
+    "id": "event-persons-inline-form-tooltip-sort",
+    "module": "events",
+    "path": "/event/{personLinkEventId}/manage/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#event-settings-persons button.icon-edit"
+      },
+      {
+        "waitFor": "#person-link-field-person_link_data .ui.buttons"
+      }
+    ],
+    "hover": "#person-link-field-person_link_data ind-with-tooltip:has(i.sort)",
+    "hoverWaitFor": "#person-link-field-person_link_data ind-with-tooltip:has(i.sort)[shown]"
+  },
+  {
+    "id": "event-persons-inline-form-tooltip-role",
+    "module": "events",
+    "path": "/event/{personLinkEventId}/manage/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#event-settings-persons button.icon-edit"
+      },
+      {
+        "waitFor": "#person-link-field-person_link_data .ui.buttons"
+      }
+    ],
+    "hover": "#person-link-field-person_link_data ind-with-tooltip:has(i.paperclip)",
+    "hoverWaitFor": "#person-link-field-person_link_data ind-with-tooltip:has(i.paperclip)[shown]"
+  },
+  {
+    "id": "event-persons-inline-form-tooltip-edit",
+    "module": "events",
+    "path": "/event/{personLinkEventId}/manage/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#event-settings-persons button.icon-edit"
+      },
+      {
+        "waitFor": "#person-link-field-person_link_data .ui.buttons"
+      }
+    ],
+    "hover": "#person-link-field-person_link_data ind-with-tooltip:has(i.pencil)",
+    "hoverWaitFor": "#person-link-field-person_link_data ind-with-tooltip:has(i.pencil)[shown]"
+  },
+  {
+    "id": "event-persons-inline-form-tooltip-delete",
+    "module": "events",
+    "path": "/event/{personLinkEventId}/manage/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#event-settings-persons button.icon-edit"
+      },
+      {
+        "waitFor": "#person-link-field-person_link_data .ui.buttons"
+      }
+    ],
+    "hover": "#person-link-field-person_link_data ind-with-tooltip:has(i.remove)",
+    "hoverWaitFor": "#person-link-field-person_link_data ind-with-tooltip:has(i.remove)[shown]"
+  },
+  {
+    "id": "event-ics-session-display",
+    "module": "events",
+    "path": "/event/{icsExportEventId}/sessions/{icsExportSessionId}/",
+    "personas": [
+      "anonymous",
+      "manager"
+    ]
+  },
+  {
+    "id": "event-ics-session-tooltip-export",
+    "module": "events",
+    "path": "/event/{icsExportEventId}/sessions/{icsExportSessionId}/",
+    "personas": [
+      "manager"
+    ],
+    "hover": "#session-calendar-link ind-with-tooltip",
+    "hoverWaitFor": "#session-calendar-link ind-with-tooltip[shown]"
+  },
+  {
+    "id": "event-ics-contribution-display",
+    "module": "events",
+    "path": "/event/{icsExportEventId}/contributions/{icsExportContribId}/",
+    "personas": [
+      "anonymous",
+      "manager"
+    ]
+  },
+  {
+    "id": "event-ics-contribution-tooltip-export",
+    "module": "events",
+    "path": "/event/{icsExportEventId}/contributions/{icsExportContribId}/",
+    "personas": [
+      "manager"
+    ],
+    "hover": "#contribution-calendar-link ind-with-tooltip",
+    "hoverWaitFor": "#contribution-calendar-link ind-with-tooltip[shown]"
+  },
+  {
+    "id": "category-root-tooltip-export",
+    "module": "categories",
+    "path": "/",
+    "personas": [
+      "anonymous"
+    ],
+    "hover": "#category-calendar-link ind-with-tooltip",
+    "hoverWaitFor": "#category-calendar-link ind-with-tooltip[shown]"
   }
 ]

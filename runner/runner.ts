@@ -55,6 +55,12 @@ interface PageEntry {
 
 async function runActions(page: Page, actions: PageAction[] | undefined): Promise<void> {
   if (!actions) return;
+  // Actions run before waitForStable, i.e. potentially before web/icon fonts have
+  // loaded. A click that opens JS-positioned UI (e.g. the jQuery i-dropdown, whose
+  // menu is placed relative to a font-sized toggle) would then anchor to a
+  // pre-font layout and land in a different spot each run — a flaky diff. Wait for
+  // fonts to settle first so the open position is deterministic.
+  await page.evaluate('document.fonts && document.fonts.ready');
   for (const action of actions) {
     if (action.click) await page.click(action.click, {timeout: 5_000});
     // The waitFor often gates on async content (e.g. an export URL fetched after

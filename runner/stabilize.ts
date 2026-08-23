@@ -87,7 +87,10 @@ export async function installClipboardStub(page: Page): Promise<void> {
     const isHtmlDoc =
       route.request().resourceType() === 'document' && contentType.includes('text/html');
     if (!isHtmlDoc) {
-      return route.fulfill({response});
+      // The page/context can tear down mid-flight (navigation, close, or the
+      // fetched response being disposed); fulfilling then rejects. Swallow it so
+      // one late sub-resource can't crash the whole run as an unhandled rejection.
+      return route.fulfill({response}).catch(() => {});
     }
     let body = await response.text();
     if (/<head[^>]*>/i.test(body)) {
@@ -106,7 +109,7 @@ export async function installClipboardStub(page: Page): Promise<void> {
     // (Indico's own nonced scripts keep working either way).
     delete headers['content-security-policy'];
     delete headers['content-security-policy-report-only'];
-    return route.fulfill({response, body, headers});
+    return route.fulfill({response, body, headers}).catch(() => {});
   });
 }
 
