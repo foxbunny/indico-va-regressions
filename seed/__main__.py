@@ -25,6 +25,7 @@ from indico.web.flask.app import make_app  # noqa: E402
 from seed.context import SeedContext  # noqa: E402
 from seed.scenarios import (  # noqa: E402
     _common,
+    abstract_list,
     dashboard_listing,
     dashboard_roles,
     events_display,
@@ -60,6 +61,9 @@ def main():
         db.session.commit()
         sys.stderr.write('[seed] running ics_export\n')
         ics_export.seed(ctx)
+        db.session.commit()
+        sys.stderr.write('[seed] running abstract_list\n')
+        abstract_list.seed(ctx)
         db.session.commit()
         ctx.write_manifest()
     sys.stderr.write('[seed] complete\n')

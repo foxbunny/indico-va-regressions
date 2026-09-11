@@ -527,6 +527,22 @@
     ]
   },
   {
+    "id": "event-abstracts-manage-list",
+    "module": "events",
+    "path": "/event/{abstractListEventId}/manage/abstracts/list/",
+    "personas": [
+      "admin"
+    ]
+  },
+  {
+    "id": "event-contributions-manage-list",
+    "module": "events",
+    "path": "/event/{conferenceEventId}/manage/contributions/",
+    "personas": [
+      "manager"
+    ]
+  },
+  {
     "id": "event-persons-inline-form",
     "module": "events",
     "path": "/event/{personLinkEventId}/manage/",
