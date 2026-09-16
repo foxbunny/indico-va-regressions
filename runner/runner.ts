@@ -31,7 +31,15 @@ const PAGES_PATH = resolve(ROOT, 'config', 'pages.json');
 const MANIFEST_PATH = resolve(ROOT, 'output', 'manifest.json');
 
 interface PageAction {
+  hover?: string;
   click?: string;
+  press?: string;
+  // Press `key` until `selector` matches (e.g. a "...:focus" selector), up to
+  // `max` times. Robust to tab-order changes: it targets a specific element
+  // instead of a fixed count. Gives up quietly after `max` presses and captures
+  // whatever state resulted, so a control that is not yet reachable (the "before"
+  // of a focusability fix) still yields a baseline.
+  pressUntil?: {key: string; selector: string; max?: number};
   waitFor?: string;
 }
 
@@ -62,7 +70,35 @@ async function runActions(page: Page, actions: PageAction[] | undefined): Promis
   // fonts to settle first so the open position is deterministic.
   await page.evaluate('document.fonts && document.fonts.ready');
   for (const action of actions) {
+    // A hover before a click reveals hover-gated controls (e.g. a regform field's
+    // "Configure field" button, which is visibility:hidden until its row is
+    // hovered). The cursor stays parked on the hovered element, so a following
+    // click on the now-visible control keeps the reveal active.
+    if (action.hover) await page.hover(action.hover, {timeout: 5_000});
     if (action.click) await page.click(action.click, {timeout: 5_000});
+    // A real keyboard press (e.g. "Tab") — the only way to reach a keyboard-only
+    // state such as :focus-visible, which a mouse click or programmatic .focus()
+    // won't trigger.
+    if (action.press) await page.keyboard.press(action.press);
+    if (action.pressUntil) {
+      const {key, selector, max = 12} = action.pressUntil;
+      let matched = false;
+      for (let i = 0; i <= max; i++) {
+        if (await page.$(selector)) {
+          matched = true;
+          break;
+        }
+        if (i < max) {
+          await page.keyboard.press(key);
+        }
+      }
+      if (!matched) {
+        console.warn(
+          `  pressUntil: ${selector} not matched after ${max} ${key} presses ` +
+            '(capturing current state)'
+        );
+      }
+    }
     // The waitFor often gates on async content (e.g. an export URL fetched after
     // a popup opens), so give it more room than a plain click.
     if (action.waitFor) await page.waitForSelector(action.waitFor, {timeout: 15_000});

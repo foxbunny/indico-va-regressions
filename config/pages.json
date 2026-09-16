@@ -380,6 +380,98 @@
     ]
   },
   {
+    "id": "event-meeting-display-share-focus",
+    "module": "events",
+    "path": "/event/{meetingEventId}/",
+    "personas": [
+      "anonymous"
+    ],
+    "actions": [
+      {
+        "click": "ind-share-widget img >> nth=0"
+      },
+      {
+        "waitFor": "a[href*='twitter.com/intent']"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": "a[href*='google.com/calendar']:focus",
+          "max": 10
+        }
+      }
+    ]
+  },
+  {
+    "id": "event-meeting-display-share-focus-outlook",
+    "module": "events",
+    "path": "/event/{meetingEventId}/",
+    "personas": [
+      "anonymous"
+    ],
+    "actions": [
+      {
+        "click": "ind-share-widget img >> nth=0"
+      },
+      {
+        "waitFor": "a[href*='twitter.com/intent']"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": "a[href*='outlook.cloud.microsoft']:focus",
+          "max": 10
+        }
+      }
+    ]
+  },
+  {
+    "id": "event-meeting-display-share-focus-twitter",
+    "module": "events",
+    "path": "/event/{meetingEventId}/",
+    "personas": [
+      "anonymous"
+    ],
+    "actions": [
+      {
+        "click": "ind-share-widget img >> nth=0"
+      },
+      {
+        "waitFor": "a[href*='twitter.com/intent']"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": "a[href*='twitter.com/intent']:focus",
+          "max": 10
+        }
+      }
+    ]
+  },
+  {
+    "id": "event-meeting-display-share-focus-mastodon",
+    "module": "events",
+    "path": "/event/{meetingEventId}/",
+    "personas": [
+      "anonymous"
+    ],
+    "actions": [
+      {
+        "click": "ind-share-widget img >> nth=0"
+      },
+      {
+        "waitFor": "a[href*='twitter.com/intent']"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": "[class*='mastodon-button']:focus",
+          "max": 6
+        }
+      }
+    ]
+  },
+  {
     "id": "event-conference-display",
     "module": "events",
     "path": "/event/{conferenceEventId}/",
@@ -677,5 +769,24 @@
     ],
     "hover": "#category-calendar-link ind-with-tooltip",
     "hoverWaitFor": "#category-calendar-link ind-with-tooltip[shown]"
+  },
+  {
+    "id": "event-regform-field-config-modal",
+    "module": "events",
+    "path": "/event/{regformEventId}/manage/registration/{regformId}/form/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "hover": ".regform-section:has-text('Preferences') .field"
+      },
+      {
+        "click": ".regform-section:has-text('Preferences') a.icon-settings[title='Configure field']"
+      },
+      {
+        "waitFor": ".ui.modal.visible .ui.selection.dropdown"
+      }
+    ]
   }
 ]

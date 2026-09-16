@@ -31,6 +31,7 @@ from seed.scenarios import (  # noqa: E402
     events_display,
     ics_export,
     person_links,
+    regform_required_field,
 )
 from storage.db import apply_schema, connect  # noqa: E402
 
@@ -64,6 +65,9 @@ def main():
         db.session.commit()
         sys.stderr.write('[seed] running abstract_list\n')
         abstract_list.seed(ctx)
+        db.session.commit()
+        sys.stderr.write('[seed] running regform_required_field\n')
+        regform_required_field.seed(ctx)
         db.session.commit()
         ctx.write_manifest()
     sys.stderr.write('[seed] complete\n')
