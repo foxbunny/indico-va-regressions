@@ -627,6 +627,22 @@
     ]
   },
   {
+    "id": "event-abstract-submit-editor",
+    "module": "events",
+    "path": "/event/{abstractListEventId}/abstracts/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": ".js-show-abstract-form"
+      },
+      {
+        "waitFor": "#wmd-button-bar-f_description .wmd-button"
+      }
+    ]
+  },
+  {
     "id": "event-contributions-manage-list",
     "module": "events",
     "path": "/event/{conferenceEventId}/manage/contributions/",
