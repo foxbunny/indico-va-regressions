@@ -627,6 +627,22 @@
     ]
   },
   {
+    "id": "event-abstracts-manage-list-new-menu",
+    "module": "events",
+    "path": "/event/{abstractListEventId}/manage/abstracts/list/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": ".toolbar button.icon-plus"
+      },
+      {
+        "waitFor": ".toolbar button.icon-plus + :is(ul.i-dropdown, menu):visible"
+      }
+    ]
+  },
+  {
     "id": "event-abstract-submit-editor",
     "module": "events",
     "path": "/event/{abstractListEventId}/abstracts/",
