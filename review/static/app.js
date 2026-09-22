@@ -41,6 +41,12 @@ async function fetchJson(url, opts) {
   return res.json();
 }
 
+async function fetchText(url) {
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  return res.text();
+}
+
 function humanTime(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -55,9 +61,7 @@ function pageTitleRow(title, ...items) {
   );
 }
 
-// Find every other open diff for the same (page, persona) — a11y, and any
-// visual entry across every browser. Used to render "switch" links in a single
-// diff's detail view.
+// Find every other diff for the same (page, persona) to switch between engines/modalities.
 async function siblingDiffs(currentKey, pageId, persona) {
   try {
     const data = await fetchJson('/api/diffs');
@@ -74,7 +78,6 @@ function diffKey(kind, browser) {
 }
 
 function switchKindLinks(currentKey, pageId, persona, siblings) {
-  // Render a link for every sibling that isn't the one we're already looking at.
   const out = [];
   for (const v of siblings.visuals) {
     const key = diffKey('visual', v.browser);
@@ -93,29 +96,10 @@ function switchKindLinks(currentKey, pageId, persona, siblings) {
   return out;
 }
 
-function historyLink(kind, pageId, persona, browser) {
-  const href = kind === 'visual'
-    ? `#/history/visual/${browser}/${pageId}/${persona}`
-    : `#/history/a11y/${pageId}/${persona}`;
-  return el('a', {href, class: 'icon-link'}, icon('history'), ' History');
-}
-
-function statusBadge(status) {
-  return el('span', {class: `status-${status}`}, status);
-}
-
 function humanPx(n) {
   if (n < 1000) return `${n}px`;
   if (n < 1_000_000) return `${Math.round(n / 1000)}Kpx`;
   return `${Math.round(n / 1_000_000)}Mpx`;
-}
-
-function diffMetric(d) {
-  if (d.kind === 'visual') {
-    return d.pixel_pct > 0 ? `${d.pixel_pct.toFixed(3)}% (${humanPx(d.pixel_count)})` : '—';
-  }
-  const total = (d.added_count || 0) + (d.removed_count || 0);
-  return total > 0 ? `+${d.added_count} / -${d.removed_count}` : '—';
 }
 
 function navLinks(active) {
@@ -126,7 +110,7 @@ function navLinks(active) {
   );
 }
 
-// --- dashboard: open diffs (default) ----------------------------------------
+// --- dashboard: open diffs (transient from latest run) ----------------------
 
 function visualChange(v) {
   const cls = `change-chip change-visual change-${v.status}`;
@@ -158,13 +142,10 @@ function changesCell(visuals, a) {
 }
 
 function combinedDiffsTable(visualGroups, a11yMap) {
-  // Build a sorted list of (page_id, persona) keys that have a diff in either
-  // modality. Visuals are pre-grouped per (page, persona) → list of per-browser
-  // rows; a11y is at most one row per (page, persona).
   const keys = new Set([...visualGroups.keys(), ...a11yMap.keys()]);
   if (keys.size === 0) {
     return el('p', {class: 'empty'},
-      'No open diffs — every page matches its baseline in any captured browser.');
+      'No open diffs — every page matches its baseline in the latest run.');
   }
   const sorted = [...keys].sort();
   const tbody = el('tbody');
@@ -172,9 +153,7 @@ function combinedDiffsTable(visualGroups, a11yMap) {
     const visuals = visualGroups.get(key) || [];
     const a = a11yMap.get(key) || null;
     const [pageId, persona] = key.split('\0');
-    // Preview thumbnail prefers a visual diff overlay (any browser, first one
-    // with a diff image wins). New visuals have no overlay; a11y-only rows
-    // get a text placeholder.
+
     const previewVisual = visuals.find(v => v.has_diff_image) || visuals[0] || null;
     let previewContent;
     let previewHref;
@@ -186,21 +165,13 @@ function combinedDiffsTable(visualGroups, a11yMap) {
       });
       previewHref = `#/diff/visual/${previewVisual.browser}/${pageId}/${persona}`;
     } else if (previewVisual) {
-      previewContent = el('span', {class: 'empty thumb-placeholder'}, '(new — no diff)');
+      previewContent = el('span', {class: 'empty thumb-placeholder'}, '(new)');
       previewHref = `#/diff/visual/${previewVisual.browser}/${pageId}/${persona}`;
     } else {
       previewContent = el('span', {class: 'empty thumb-placeholder'}, 'a11y-only');
       previewHref = `#/diff/a11y/${pageId}/${persona}`;
     }
-    const rowCb = el('input', {
-      type: 'checkbox',
-      class: 'row-cb',
-      'data-page-id': pageId,
-      'data-persona': persona,
-      'data-visual-browsers': visuals.map(v => v.browser).join(','),
-      'data-has-a11y': a ? 'true' : 'false',
-      onchange: updateSelectAllState,
-    });
+
     const actionBtns = [];
     for (const v of visuals) {
       actionBtns.push(el('button', {
@@ -215,7 +186,6 @@ function combinedDiffsTable(visualGroups, a11yMap) {
       }, icon('a11y'), ' a11y'));
     }
     tbody.appendChild(el('tr', {},
-      el('td', {class: 'cb-cell'}, rowCb),
       el('td', {class: 'thumb-cell'}, thumbLink(previewHref, previewContent)),
       el('td', {}, pageId),
       el('td', {}, persona),
@@ -223,14 +193,8 @@ function combinedDiffsTable(visualGroups, a11yMap) {
       el('td', {class: 'actions-cell'}, ...actionBtns),
     ));
   }
-  const headerCb = el('input', {
-    type: 'checkbox',
-    id: 'select-all-cb',
-    onchange: (e) => selectRows(e.target.checked ? 'all' : 'none'),
-  });
   return el('table', {},
     el('thead', {}, el('tr', {},
-      el('th', {class: 'cb-cell'}, headerCb),
       el('th', {}, 'Preview'),
       el('th', {}, 'Page'),
       el('th', {}, 'Persona'),
@@ -241,159 +205,11 @@ function combinedDiffsTable(visualGroups, a11yMap) {
   );
 }
 
-function selectRows(filter) {
-  const cbs = document.querySelectorAll('.row-cb');
-  for (const cb of cbs) {
-    if (filter === 'all') cb.checked = true;
-    else if (filter === 'none') cb.checked = false;
-    else if (filter === 'visual') cb.checked = cb.dataset.visualBrowsers !== '';
-    else if (filter === 'a11y') cb.checked = cb.dataset.hasA11y === 'true';
-  }
-  updateSelectAllState();
-}
-
-function updateSelectAllState() {
-  const cbs = document.querySelectorAll('.row-cb');
-  const checked = Array.from(cbs).filter(c => c.checked).length;
-  const headerCb = document.getElementById('select-all-cb');
-  if (!headerCb) return;
-  headerCb.checked = cbs.length > 0 && checked === cbs.length;
-  headerCb.indeterminate = checked > 0 && checked < cbs.length;
-}
-
-// Build the {page_id, persona, browsers, a11y} item list the bulk endpoints
-// expect from a set of row checkboxes.
-function rowItems(cbs) {
-  return cbs.map(cb => {
-    const {pageId, persona, visualBrowsers, hasA11y} = cb.dataset;
-    return {
-      page_id: pageId,
-      persona,
-      browsers: visualBrowsers ? visualBrowsers.split(',') : [],
-      a11y: hasA11y === 'true',
-    };
-  });
-}
-
-async function acceptSelected() {
-  const cbs = Array.from(document.querySelectorAll('.row-cb:checked'));
-  if (cbs.length === 0) {
-    alert('No rows selected.');
-    return;
-  }
-  if (!confirm(`Promote ${cbs.length} selected proposal(s) to baseline?`)) return;
-  await fetchJson('/api/diffs/accept-selected', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({items: rowItems(cbs)}),
-  });
-  await renderDiffs();
-}
-
-// Delete drops the diff rows without promoting them — the baseline still holds,
-// so a later run re-files the diff if the page still differs. Useful for
-// clearing stale proposals left over from an earlier, differently-scoped run.
-async function deleteSelected() {
-  const cbs = Array.from(document.querySelectorAll('.row-cb:checked'));
-  if (cbs.length === 0) {
-    alert('No rows selected.');
-    return;
-  }
-  if (!confirm(`Delete ${cbs.length} selected diff(s)?\n\n` +
-               'The baseline is left untouched; a future run re-files the diff ' +
-               'if the page still differs.')) return;
-  await fetchJson('/api/diffs/delete-selected', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({items: rowItems(cbs)}),
-  });
-  await renderDiffs();
-}
-
-async function deleteAll() {
-  const scoped = diffsState.runFilter !== 'all';
-  const label = scoped ? 'the diffs from this run' : 'every open diff';
-  if (!confirm(`Delete ${label}?\n\n` +
-               'Baselines are left untouched; a future run re-files any diff ' +
-               'whose page still differs.')) return;
-  const qs = scoped ? `?run=${encodeURIComponent(diffsState.runFilter)}` : '';
-  await fetchJson(`/api/diffs/delete-all${qs}`, {method: 'POST'});
-  await renderDiffs();
-}
-
-// --- run filter -------------------------------------------------------------
-
-// Cached open-diff payload + current run filter, so changing the filter
-// re-renders from memory without re-hitting the API. runFilter is 'all', the
-// string 'none' (rows with no capture run), or a numeric run_log_id as a string.
-const diffsState = {data: {visual: [], a11y: []}, runsById: new Map(), runFilter: 'all'};
-
-// Distinct capture runs present across the open diffs, newest first, plus
-// whether any diff carries no run id.
-function distinctRuns(data) {
-  const ids = new Set();
-  let hasNull = false;
-  for (const d of [...data.visual, ...data.a11y]) {
-    if (d.run_log_id == null) hasNull = true;
-    else ids.add(d.run_log_id);
-  }
-  return {ids: [...ids].sort((a, b) => b - a), hasNull};
-}
-
-function runLabel(id) {
-  const run = diffsState.runsById.get(id);
-  return run && run.started_at ? `Run #${id} — ${humanTime(run.started_at)}` : `Run #${id}`;
-}
-
-function applyRunFilter(data, runFilter) {
-  if (runFilter === 'all') return data;
-  const want = runFilter === 'none' ? null : Number(runFilter);
-  const match = d => (d.run_log_id ?? null) === want;
-  return {visual: data.visual.filter(match), a11y: data.a11y.filter(match)};
-}
-
-function runFilterControl(data) {
-  const {ids, hasNull} = distinctRuns(data);
-  const groups = ids.length + (hasNull ? 1 : 0);
-  // No diffs at all → no run slot.
-  if (groups === 0) return null;
-  // A single run can't be filtered — show it as a static label in the same
-  // slot the dropdown would occupy, so the buttons don't shift sides.
-  if (groups === 1) {
-    const text = ids.length ? runLabel(ids[0]) : '(no run id)';
-    return el('span', {class: 'run-filter-label'}, 'Run: ', el('span', {class: 'run-filter-static'}, text));
-  }
-  const sel = el('select', {
-    id: 'run-filter',
-    onchange: e => { diffsState.runFilter = e.target.value; renderDiffsView(); },
-  });
-  sel.appendChild(el('option', {value: 'all'}, 'All runs'));
-  for (const id of ids) sel.appendChild(el('option', {value: String(id)}, runLabel(id)));
-  if (hasNull) sel.appendChild(el('option', {value: 'none'}, '(no run id)'));
-  sel.value = diffsState.runFilter;
-  return el('label', {class: 'run-filter-label'}, 'Run: ', sel);
-}
-
 async function renderDiffs() {
   breadcrumb.textContent = '';
-  app.replaceChildren(navLinks('diffs'), el('p', {}, 'Loading…'));
-  const [data, runs] = await Promise.all([
-    fetchJson('/api/diffs'),
-    fetchJson('/api/runs').catch(() => []),
-  ]);
-  diffsState.data = data;
-  diffsState.runsById = new Map(runs.map(r => [r.id, r]));
-  // Drop a stale filter (e.g. the run it pointed at no longer has open diffs).
-  const {ids, hasNull} = distinctRuns(data);
-  const valid = new Set(['all', ...ids.map(String), ...(hasNull ? ['none'] : [])]);
-  if (!valid.has(diffsState.runFilter)) diffsState.runFilter = 'all';
-  renderDiffsView();
-}
+  app.replaceChildren(navLinks('diffs'), el('p', {}, 'Loading open diffs…'));
+  const data = await fetchJson('/api/diffs');
 
-function renderDiffsView() {
-  const data = applyRunFilter(diffsState.data, diffsState.runFilter);
-  // Group visual rows by (page, persona) since the same key can now have one
-  // per browser. a11y still has at most one row per (page, persona).
   const visualGroups = new Map();
   for (const v of data.visual) {
     const key = `${v.page_id}\0${v.persona}`;
@@ -404,7 +220,6 @@ function renderDiffsView() {
   const totalVisual = data.visual.length;
   const totalA11y = data.a11y.length;
 
-  // Per-browser totals for the summary line.
   const visualByBrowser = new Map();
   for (const v of data.visual) {
     visualByBrowser.set(v.browser, (visualByBrowser.get(v.browser) || 0) + 1);
@@ -414,31 +229,18 @@ function renderDiffsView() {
     .map(([b, n]) => `${n} ${b}`)
     .join(' + ');
 
-  const hasDiffs = totalVisual + totalA11y > 0;
-  const toolbarItems = [
-    runFilterControl(diffsState.data),
-    hasDiffs ? el('button', {onclick: () => selectRows('visual')}, 'Select all visual') : null,
-    hasDiffs ? el('button', {onclick: () => selectRows('a11y')}, 'Select all a11y') : null,
-    hasDiffs ? el('button', {class: 'accept', onclick: acceptSelected}, icon('check'), ' Accept selected') : null,
-    hasDiffs ? el('button', {class: 'delete-btn', onclick: deleteSelected}, icon('trash'), ' Delete selected') : null,
-    hasDiffs ? el('button', {class: 'delete-btn', onclick: deleteAll}, icon('trash'), ' Delete all') : null,
-  ].filter(Boolean);
-
   app.replaceChildren(
     navLinks('diffs'),
-    el('h2', {}, `Open diffs`),
+    el('h2', {}, 'Open diffs (latest run)'),
     el('p', {class: 'run-meta'},
       totalVisual + totalA11y === 0
-        ? (diffsState.runFilter === 'all'
-            ? 'Everything matches its baseline.'
-            : 'No open diffs for this run.')
+        ? 'Everything matches its baseline.'
         : el('span', {},
-            `${totalVisual} visual open diff${totalVisual === 1 ? '' : 's'}`,
+            `${totalVisual} visual diff${totalVisual === 1 ? '' : 's'}`,
             browserSummary ? ` (${browserSummary})` : '',
-            ` · ${totalA11y} a11y open diff${totalA11y === 1 ? '' : 's'}`,
+            ` · ${totalA11y} a11y diff${totalA11y === 1 ? '' : 's'}`,
           ),
     ),
-    toolbarItems.length ? el('div', {class: 'diff-toolbar'}, ...toolbarItems) : null,
     combinedDiffsTable(visualGroups, a11yMap),
   );
 }
@@ -446,33 +248,34 @@ function renderDiffsView() {
 // --- baselines tab ----------------------------------------------------------
 
 function baselinesTable(kind, rows) {
-  if (rows.length === 0) return el('p', {class: 'empty'}, `No ${kind} baselines yet.`);
+  if (rows.length === 0) return el('p', {class: 'empty'}, `No ${kind} baselines.`);
   const tbody = el('tbody');
   for (const row of rows) {
     const thumbContent = kind === 'visual'
-      ? el('img', {class: 'thumb', src: `/img/baseline/by-id/${row.id}.png`, loading: 'lazy', alt: ''})
+      ? el('img', {
+          class: 'thumb',
+          src: `/img/baseline/${row.browser}/${row.page_id}/${row.persona}.png`,
+          loading: 'lazy', alt: '',
+        })
       : el('span', {class: 'empty thumb-placeholder'}, `${row.node_count} nodes`);
-    const historyHref = kind === 'visual'
-      ? `#/history/visual/${row.browser}/${row.page_id}/${row.persona}`
-      : `#/history/a11y/${row.page_id}/${row.persona}`;
     const cells = [
-      el('td', {class: 'thumb-cell'}, thumbLink(historyHref, thumbContent)),
+      el('td', {class: 'thumb-cell'}, thumbContent),
       el('td', {}, row.page_id),
       el('td', {}, row.persona),
     ];
     if (kind === 'visual') {
       cells.push(el('td', {}, el('span', {class: 'browser-tag'}, row.browser)));
+      cells.push(el('td', {}, `${row.width} × ${row.height}`));
+    } else {
+      cells.push(el('td', {}, `${row.node_count} nodes`));
     }
-    cells.push(
-      el('td', {}, row.captured_at),
-      el('td', {}, String(row.history_size)),
-      el('td', {}, el('a', {href: historyHref}, 'history')),
-    );
+    cells.push(el('td', {}, humanTime(row.captured_at)));
     tbody.appendChild(el('tr', {}, ...cells));
   }
   const headers = [el('th', {}, 'Preview'), el('th', {}, 'Page'), el('th', {}, 'Persona')];
-  if (kind === 'visual') headers.push(el('th', {}, 'Browser'));
-  headers.push(el('th', {}, 'Current accepted'), el('th', {}, 'Versions'), el('th', {}, ''));
+  if (kind === 'visual') headers.push(el('th', {}, 'Browser'), el('th', {}, 'Resolution'));
+  else headers.push(el('th', {}, 'Nodes'));
+  headers.push(el('th', {}, 'Captured'));
   return el('table', {},
     el('thead', {}, el('tr', {}, ...headers)),
     tbody,
@@ -481,16 +284,11 @@ function baselinesTable(kind, rows) {
 
 async function renderBaselines() {
   breadcrumb.textContent = '';
-  app.replaceChildren(navLinks('baselines'), el('p', {}, 'Loading…'));
+  app.replaceChildren(navLinks('baselines'), el('p', {}, 'Loading baselines…'));
   const data = await fetchJson('/api/baselines');
-  const hasBaselines = data.visual.length + data.a11y.length > 0;
   app.replaceChildren(
     navLinks('baselines'),
-    el('h2', {}, 'All baselines'),
-    hasBaselines ? el('div', {class: 'diff-toolbar'},
-      el('button', {class: 'revert-btn', onclick: revertAll},
-        icon('undo'), ' Revert last batch'),
-    ) : null,
+    el('h2', {}, 'All baselines (master snapshot)'),
     el('h3', {class: 'section-title'}, `Visual (${data.visual.length})`),
     baselinesTable('visual', data.visual),
     el('h3', {class: 'section-title'}, `Accessibility (${data.a11y.length})`),
@@ -498,139 +296,7 @@ async function renderBaselines() {
   );
 }
 
-// --- history view -----------------------------------------------------------
-
-function historyChangeChip(kind, row) {
-  // Each baseline row carries the diff that produced it (i.e. against the
-  // previous baseline). The very first baseline in a chain has no predecessor
-  // and shows '(initial)'. Pre-existing rows accepted before this column was
-  // added are chained via the backfill but lack the stored overlay/unified
-  // diff, so we show '(delta not stored)' while still letting the user open
-  // a side-by-side comparison.
-  if (row.prev_baseline_id == null) return el('span', {class: 'empty'}, '(initial)');
-  if (kind === 'visual') {
-    if (!row.has_diff_image) return el('span', {class: 'empty'}, '(delta not stored)');
-    const pct = row.pixel_pct ? row.pixel_pct.toFixed(3) : '0';
-    return el('span', {class: 'change-chip change-visual change-changed'},
-      icon('eye'), ` ${pct}% (${humanPx(row.pixel_count)})`);
-  }
-  if (!row.has_diff_text) return el('span', {class: 'empty'}, '(delta not stored)');
-  return el('span', {class: 'change-chip change-a11y change-changed'},
-    icon('a11y'), ` +${row.added_count}/-${row.removed_count}`);
-}
-
-function historyPreviewCell(kind, row) {
-  if (kind === 'visual' && row.has_diff_image && row.prev_baseline_id != null) {
-    return el('img', {
-      class: 'thumb',
-      src: `/img/baseline-diff/by-id/${row.id}.png`,
-      loading: 'lazy', alt: '',
-    });
-  }
-  if (kind === 'visual') {
-    return el('img', {
-      class: 'thumb',
-      src: `/img/baseline/by-id/${row.id}.png`,
-      loading: 'lazy', alt: '',
-    });
-  }
-  return el('span', {class: 'empty thumb-placeholder'}, `${row.node_count} nodes`);
-}
-
-async function renderHistory(kind, pageId, persona, browser) {
-  const titleSuffix = kind === 'visual' ? ` · ${browser}` : '';
-  breadcrumb.innerHTML = `&rsaquo; <a href="#/baselines">baselines</a> &rsaquo; ${escape(pageId)} (${escape(persona)}${escape(titleSuffix)})`;
-  app.replaceChildren(el('p', {}, 'Loading history…'));
-  const historyUrl = kind === 'visual'
-    ? `/api/baselines/visual/${browser}/${pageId}/${persona}`
-    : `/api/baselines/a11y/${pageId}/${persona}`;
-  const history = await fetchJson(historyUrl);
-  if (history.length === 0) {
-    app.replaceChildren(el('p', {class: 'empty'}, 'No baselines for this entry.'));
-    return;
-  }
-  const historicDiffHref = id => `#/history-diff/${kind}/${pageId}/${persona}/${id}`;
-  const tbody = el('tbody');
-  history.forEach((row, idx) => {
-    const isCurrent = idx === 0;
-    // Pre-migration rows have a chained prev_baseline_id but no stored
-    // overlay/unified-diff — side-by-side is still useful, so we open the
-    // historic-diff viewer for any chained step and degrade gracefully there.
-    const canView = row.prev_baseline_id != null;
-    const previewContent = historyPreviewCell(kind, row);
-    const previewCell = canView ? thumbLink(historicDiffHref(row.id), previewContent) : previewContent;
-    tbody.appendChild(el('tr', {},
-      el('td', {class: 'thumb-cell'}, previewCell),
-      el('td', {}, humanTime(row.captured_at),
-        isCurrent ? el('span', {class: 'history-stamp history-current'}, ' (current)') : null),
-      el('td', {}, historyChangeChip(kind, row)),
-      el('td', {class: 'actions-cell'},
-        canView ? el('a', {
-          href: historicDiffHref(row.id),
-          class: `view-btn view-btn-${kind}`,
-        }, icon(kind === 'visual' ? 'eye' : 'a11y'), ' View diff') : null,
-      ),
-    ));
-  });
-
-  app.replaceChildren(
-    pageTitleRow(`History: ${pageId} · ${persona}${titleSuffix} (${kind})`),
-    el('p', {class: 'run-meta'},
-      `${history.length} accepted baseline${history.length === 1 ? '' : 's'}, most recent first. `,
-      'Each row shows the change against the previous baseline.'),
-    el('div', {class: 'diff-toolbar'},
-      el('button', {class: 'reset', onclick: () => resetBaseline(kind, pageId, persona, browser)},
-        icon('trash'), ' Forget all baselines'),
-    ),
-    el('table', {},
-      el('thead', {}, el('tr', {},
-        el('th', {}, 'Preview'),
-        el('th', {}, 'Captured'),
-        el('th', {}, 'Change vs previous'),
-        el('th', {}, ''),
-      )),
-      tbody,
-    ),
-  );
-}
-
-// --- diff viewer ------------------------------------------------------------
-
-async function acceptDiff(kind, pageId, persona, browser) {
-  const url = kind === 'visual'
-    ? `/api/diffs/visual/${browser}/${pageId}/${persona}/accept`
-    : `/api/diffs/a11y/${pageId}/${persona}/accept`;
-  await fetchJson(url, {method: 'POST'});
-  location.hash = '#/';
-}
-
-async function resetBaseline(kind, pageId, persona, browser) {
-  const label = kind === 'visual' ? `${pageId} (${persona} · ${browser})` : `${pageId} (${persona})`;
-  if (!confirm(`Forget every accepted baseline for ${label}?\nThe next run will record it as "new".`)) return;
-  const url = kind === 'visual'
-    ? `/api/baselines/visual/${browser}/${pageId}/${persona}/reset`
-    : `/api/baselines/a11y/${pageId}/${persona}/reset`;
-  await fetchJson(url, {method: 'POST'});
-  location.hash = '#/baselines';
-}
-
-// Bulk undo — the inverse of accept-all, scoped to the most recently captured
-// run (every baseline carries the run that captured it). Pops that run's
-// accepts back into pending diffs, then lands on the open-diffs view so the
-// restored proposals are right there. Accepts from earlier runs, original
-// captures, and keys that already have a pending diff are left untouched.
-async function revertAll() {
-  if (!confirm('Undo the most recently captured run’s accepts?\n\n' +
-               'Every baseline captured by that run reverts to its previous baseline and the ' +
-               'change reappears as a pending diff. Accepts from earlier runs are left alone.')) return;
-  const counts = await fetchJson('/api/diffs/revert-all', {method: 'POST'});
-  const n = (counts.visual || 0) + (counts.a11y || 0);
-  if (n === 0) {
-    alert('Nothing to revert — no baseline had a previous accept to undo.');
-    return;
-  }
-  location.hash = '#/';
-}
+// --- diff viewers (read-only inspection) ------------------------------------
 
 function buildSyncedViewer({baselineSrc, proposalSrc, hasBaseline}) {
   const makePanel = (label, src) => {
@@ -647,8 +313,8 @@ function buildSyncedViewer({baselineSrc, proposalSrc, hasBaseline}) {
     return {wrap, viewport};
   };
 
-  const baseline = makePanel('baseline', hasBaseline ? baselineSrc : null);
-  const proposal = makePanel('proposal (new state)', proposalSrc);
+  const baseline = makePanel('baseline (master)', hasBaseline ? baselineSrc : null);
+  const proposal = makePanel('proposal (current run)', proposalSrc);
 
   const targets = [baseline, proposal]
     .map(({viewport}) => ({viewport, image: viewport.querySelector('img')}))
@@ -672,9 +338,6 @@ function renderUnifiedDiff(text) {
   return pre;
 }
 
-// Click-to-toggle fit↔1:1 zoom, with drag-to-pan at 1:1. Pass one target for
-// standalone behavior, or multiple to sync every target's zoom + pan to a
-// shared state.
 function attachZoom(targets) {
   const state = {zoomed: false, tx: 0, ty: 0};
   let didMove = false;
@@ -693,9 +356,6 @@ function attachZoom(targets) {
 
   function toggleAt(viewport, image, clientX, clientY) {
     if (!state.zoomed) {
-      // Position the natural-pixel under the cursor at the same screen point
-      // so the click target stays put when switching to 1:1. Other synced
-      // targets follow the same translation.
       const paneRect = viewport.getBoundingClientRect();
       const displayed = image.getBoundingClientRect();
       const fitScale = displayed.width / image.naturalWidth;
@@ -756,7 +416,7 @@ async function renderVisualDiff(pageId, persona, browser) {
     fetchJson(`/api/diffs/visual/${browser}/${pageId}/${persona}`),
     siblingDiffs(diffKey('visual', browser), pageId, persona),
   ]);
-  const hasBaseline = diff.baseline_id !== null;
+  const hasBaseline = Boolean(diff.has_baseline);
 
   const diffImg = diff.has_diff_image
     ? el('img', {
@@ -770,7 +430,7 @@ async function renderVisualDiff(pageId, persona, browser) {
     : el('p', {class: 'empty'},
         hasBaseline
           ? 'Snapshots differ in size only — no pixel overlay produced.'
-          : 'No baseline yet — accept this proposal to set one.');
+          : 'No baseline exists for this page yet.');
   if (diffImg) attachZoom([{viewport: diffBody, image: diffImg}]);
 
   const viewer = buildSyncedViewer({
@@ -782,29 +442,16 @@ async function renderVisualDiff(pageId, persona, browser) {
   app.replaceChildren(
     pageTitleRow(`Visual: ${pageId} · ${persona} · ${browser}`,
       ...switchKindLinks(diffKey('visual', browser), pageId, persona, siblings),
-      hasBaseline ? historyLink('visual', pageId, persona, browser) : null,
     ),
     el('p', {class: 'run-meta'},
       `${diff.pixel_pct ? diff.pixel_pct.toFixed(3) : '0'}% (${humanPx(diff.pixel_count)}) · captured ${humanTime(diff.captured_at)}`,
     ),
-    el('p', {class: 'run-meta'}, 'Pixels that changed between the baseline and the new proposal. Magenta blocks are masked regions (CAPTCHA, etc.).'),
+    el('p', {class: 'run-meta'}, 'Pixels that changed between the master baseline and the current branch render. Magenta blocks are masked regions.'),
     el('h3', {class: 'section-title'}, 'Diff'),
     diffBody,
     el('h3', {class: 'section-title'}, 'Side-by-side'),
     viewer,
-    el('div', {class: 'diff-toolbar diff-toolbar-bottom'},
-      el('button', {class: 'accept', onclick: () => acceptDiff('visual', pageId, persona, browser)},
-        icon('check'), ' Update baseline to this'),
-      hasBaseline ? el('button', {class: 'reset', onclick: () => resetBaseline('visual', pageId, persona, browser)},
-        icon('trash'), ' Forget baseline') : null,
-    ),
   );
-}
-
-async function fetchText(url) {
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  return res.text();
 }
 
 async function renderA11yDiff(pageId, persona) {
@@ -816,11 +463,11 @@ async function renderA11yDiff(pageId, persona) {
     fetchText(`/outline/proposal/${pageId}/${persona}`),
     siblingDiffs('a11y', pageId, persona),
   ]);
-  const hasBaseline = diff.baseline_id !== null;
+  const hasBaseline = Boolean(diff.has_baseline);
 
   const diffBody = diff.diff_text
     ? el('div', {class: 'a11y-diff'}, renderUnifiedDiff(diff.diff_text))
-    : el('p', {class: 'empty'}, hasBaseline ? 'Tree differs but no unified diff produced.' : 'No baseline yet — accept this proposal to set one.');
+    : el('p', {class: 'empty'}, hasBaseline ? 'Tree differs but no unified diff produced.' : 'No baseline exists for this page yet.');
 
   const outlinePanel = (label, text, missingMsg) => el('div', {class: 'outline-wrap'},
     el('div', {class: 'outline-label'}, label),
@@ -832,7 +479,6 @@ async function renderA11yDiff(pageId, persona) {
   app.replaceChildren(
     pageTitleRow(`A11y: ${pageId} · ${persona}`,
       ...switchKindLinks('a11y', pageId, persona, siblings),
-      hasBaseline ? historyLink('a11y', pageId, persona) : null,
     ),
     el('p', {class: 'run-meta'},
       `+${diff.added_count} / -${diff.removed_count} lines · captured ${humanTime(diff.captured_at)}`,
@@ -842,99 +488,8 @@ async function renderA11yDiff(pageId, persona) {
     diffBody,
     el('h3', {class: 'section-title'}, 'Side-by-side'),
     el('div', {class: 'outline-grid'},
-      outlinePanel('Baseline (before)', baselineOutline, 'No baseline yet.'),
-      outlinePanel('Proposal (after)', proposalOutline, 'No proposal data.'),
-    ),
-    el('div', {class: 'diff-toolbar diff-toolbar-bottom'},
-      el('button', {class: 'accept', onclick: () => acceptDiff('a11y', pageId, persona)},
-        icon('check'), ' Update baseline to this'),
-      hasBaseline ? el('button', {class: 'reset', onclick: () => resetBaseline('a11y', pageId, persona)},
-        icon('trash'), ' Forget baseline') : null,
-    ),
-  );
-}
-
-// --- historic diff viewer (one accepted step in a baseline's history) -------
-
-async function renderHistoricVisualDiff(pageId, persona, baselineId) {
-  app.replaceChildren(el('p', {}, 'Loading diff…'));
-  const meta = await fetchJson(`/api/baseline-step/visual/${baselineId}`);
-  const browser = meta.browser;
-  breadcrumb.innerHTML = `&rsaquo; <a href="#/baselines">baselines</a> &rsaquo; <a href="#/history/visual/${escape(browser)}/${escape(pageId)}/${escape(persona)}">${escape(pageId)} (${escape(persona)} · ${escape(browser)})</a> &rsaquo; #${baselineId}`;
-  if (meta.prev_baseline_id == null) {
-    app.replaceChildren(el('p', {class: 'empty'}, 'This is the initial baseline — nothing to diff against.'));
-    return;
-  }
-  let diffSection = null;
-  if (meta.has_diff_image) {
-    const diffImg = el('img', {
-      src: `/img/baseline-diff/by-id/${baselineId}.png`,
-      alt: 'pixel-difference overlay',
-      class: 'zoom-img',
-    });
-    const pane = el('div', {class: 'zoom-pane visual-diff-pane'}, diffImg);
-    attachZoom([{viewport: pane, image: diffImg}]);
-    diffSection = [el('h3', {class: 'section-title'}, 'Diff'), pane];
-  }
-
-  const viewer = buildSyncedViewer({
-    baselineSrc: `/img/baseline/by-id/${meta.prev_baseline_id}.png`,
-    proposalSrc: `/img/baseline/by-id/${baselineId}.png`,
-    hasBaseline: true,
-  });
-
-  const metricLine = meta.has_diff_image
-    ? `${meta.pixel_pct ? meta.pixel_pct.toFixed(3) : '0'}% (${humanPx(meta.pixel_count)}) · accepted ${humanTime(meta.captured_at)} · #${meta.prev_baseline_id} → #${meta.id}`
-    : `accepted ${humanTime(meta.captured_at)} · #${meta.prev_baseline_id} → #${meta.id} · diff overlay not stored (pre-migration baseline)`;
-
-  app.replaceChildren(
-    pageTitleRow(`Visual history: ${pageId} · ${persona} · ${browser}`,
-      historyLink('visual', pageId, persona, browser),
-    ),
-    el('p', {class: 'run-meta'}, metricLine),
-    el('p', {class: 'run-meta'}, 'Read-only view of an accepted step. Baseline = the version this replaced; Proposal = the version that became current at this step.'),
-    diffSection,
-    el('h3', {class: 'section-title'}, 'Side-by-side'),
-    viewer,
-  );
-}
-
-async function renderHistoricA11yDiff(pageId, persona, baselineId) {
-  breadcrumb.innerHTML = `&rsaquo; <a href="#/baselines">baselines</a> &rsaquo; <a href="#/history/a11y/${escape(pageId)}/${escape(persona)}">${escape(pageId)} (${escape(persona)})</a> &rsaquo; #${baselineId}`;
-  app.replaceChildren(el('p', {}, 'Loading diff…'));
-  const meta = await fetchJson(`/api/baseline-step/a11y/${baselineId}`);
-  if (meta.prev_baseline_id == null) {
-    app.replaceChildren(el('p', {class: 'empty'}, 'This is the initial baseline — nothing to diff against.'));
-    return;
-  }
-  const [prevOutline, thisOutline] = await Promise.all([
-    fetchText(`/outline/baseline/by-id/${meta.prev_baseline_id}`),
-    fetchText(`/outline/baseline/by-id/${baselineId}`),
-  ]);
-  const outlinePanel = (label, text, missingMsg) => el('div', {class: 'outline-wrap'},
-    el('div', {class: 'outline-label'}, label),
-    text != null
-      ? el('pre', {class: 'outline-text'}, text)
-      : el('p', {class: 'empty'}, missingMsg),
-  );
-  const diffSection = meta.diff_text
-    ? [el('h3', {class: 'section-title'}, 'Diff'),
-       el('div', {class: 'a11y-diff'}, renderUnifiedDiff(meta.diff_text))]
-    : null;
-  const metricLine = meta.diff_text
-    ? `+${meta.added_count} / -${meta.removed_count} lines · accepted ${humanTime(meta.captured_at)} · #${meta.prev_baseline_id} → #${meta.id}`
-    : `accepted ${humanTime(meta.captured_at)} · #${meta.prev_baseline_id} → #${meta.id} · unified diff not stored (pre-migration baseline)`;
-  app.replaceChildren(
-    pageTitleRow(`A11y history: ${pageId} · ${persona}`,
-      historyLink('a11y', pageId, persona),
-    ),
-    el('p', {class: 'run-meta'}, metricLine),
-    el('p', {class: 'run-meta'}, 'Read-only view of an accepted step.'),
-    diffSection,
-    el('h3', {class: 'section-title'}, 'Side-by-side'),
-    el('div', {class: 'outline-grid'},
-      outlinePanel('Previous (before)', prevOutline, 'Previous baseline outline missing.'),
-      outlinePanel('This baseline (after)', thisOutline, 'Outline missing.'),
+      outlinePanel('Baseline (master)', baselineOutline, 'No baseline yet.'),
+      outlinePanel('Proposal (current branch)', proposalOutline, 'No proposal data.'),
     ),
   );
 }
@@ -953,17 +508,17 @@ async function renderRuns() {
   for (const run of runs) {
     tbody.appendChild(el('tr', {},
       el('td', {}, '#' + run.id),
-      el('td', {}, run.started_at),
-      el('td', {}, run.finished_at || '—'),
+      el('td', {}, humanTime(run.started_at)),
+      el('td', {}, run.finished_at ? humanTime(run.finished_at) : '—'),
       el('td', {}, run.git_head ? run.git_head.slice(0, 10) + (run.git_dirty ? ' (dirty)' : '') : '—'),
-      el('td', {}, `${run.new_visual} new, ${run.changed_visual} changed, ${run.cleared_visual} cleared`),
-      el('td', {}, `${run.new_a11y} new, ${run.changed_a11y} changed, ${run.cleared_a11y} cleared`),
+      el('td', {}, `${run.new_visual} new, ${run.changed_visual} changed`),
+      el('td', {}, `${run.new_a11y} new, ${run.changed_a11y} changed`),
     ));
   }
   app.replaceChildren(
     navLinks('runs'),
     el('h2', {}, 'Run log'),
-    el('p', {class: 'run-meta'}, 'Diagnostic only — diffs and baselines are the canonical state.'),
+    el('p', {class: 'run-meta'}, 'Diagnostic only — baselines and diffs are the canonical state.'),
     el('table', {},
       el('thead', {}, el('tr', {},
         el('th', {}, 'Run'),
@@ -992,17 +547,6 @@ async function route() {
     }
     if ((m = hash.match(/^\/diff\/a11y\/([^/]+)\/([^/]+)$/))) {
       return await renderA11yDiff(m[1], m[2]);
-    }
-    if ((m = hash.match(/^\/history\/visual\/([^/]+)\/([^/]+)\/([^/]+)$/))) {
-      return await renderHistory('visual', m[2], m[3], m[1]);
-    }
-    if ((m = hash.match(/^\/history\/a11y\/([^/]+)\/([^/]+)$/))) {
-      return await renderHistory('a11y', m[1], m[2]);
-    }
-    if ((m = hash.match(/^\/history-diff\/(visual|a11y)\/([^/]+)\/([^/]+)\/(\d+)$/))) {
-      return m[1] === 'visual'
-        ? renderHistoricVisualDiff(m[2], m[3], parseInt(m[4], 10))
-        : renderHistoricA11yDiff(m[2], m[3], parseInt(m[4], 10));
     }
     app.replaceChildren(el('p', {class: 'empty'}, 'Unknown route: ' + hash));
   } catch (err) {

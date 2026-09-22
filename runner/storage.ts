@@ -36,17 +36,17 @@ export function startRunLog(
 export function finishRunLog(
   db: Database.Database,
   runId: number,
-  counts: {newVisual: number; changedVisual: number; clearedVisual: number; newA11y: number; changedA11y: number; clearedA11y: number}
+  counts: {newVisual: number; changedVisual: number; newA11y: number; changedA11y: number}
 ): void {
   db.prepare(
     `UPDATE run_log SET finished_at = ?,
-       new_visual = ?, changed_visual = ?, cleared_visual = ?,
-       new_a11y   = ?, changed_a11y   = ?, cleared_a11y   = ?
+       new_visual = ?, changed_visual = ?,
+       new_a11y   = ?, changed_a11y   = ?
      WHERE id = ?`
   ).run(
     nowIso(),
-    counts.newVisual, counts.changedVisual, counts.clearedVisual,
-    counts.newA11y, counts.changedA11y, counts.clearedA11y,
+    counts.newVisual, counts.changedVisual,
+    counts.newA11y, counts.changedA11y,
     runId,
   );
 }
@@ -58,17 +58,14 @@ export function getCurrentVisualBaseline(
   pageId: string,
   persona: string,
   browser: string,
-): {id: number; image: Buffer; width: number; height: number} | null {
+): {image: Buffer; width: number; height: number} | null {
   const row = db.prepare(`
-    SELECT id, image, width, height FROM visual_baselines
+    SELECT image, width, height FROM visual_baselines
     WHERE page_id = ? AND persona = ? AND browser = ?
-    ORDER BY id DESC LIMIT 1
-  `).get(pageId, persona, browser) as {id: number; image: Buffer; width: number; height: number} | undefined;
+  `).get(pageId, persona, browser) as {image: Buffer; width: number; height: number} | undefined;
   return row ?? null;
 }
 
-// Lightweight existence check used by --only-missing mode -- skips fetching the
-// image blob since we only need a yes/no.
 export function hasVisualBaseline(
   db: Database.Database,
   pageId: string,
@@ -78,21 +75,20 @@ export function hasVisualBaseline(
   const row = db.prepare(`
     SELECT 1 FROM visual_baselines
     WHERE page_id = ? AND persona = ? AND browser = ?
-    LIMIT 1
   `).get(pageId, persona, browser);
   return row !== undefined;
 }
 
-export function insertVisualBaseline(
+export function setVisualBaseline(
   db: Database.Database,
-  args: {pageId: string; persona: string; browser: string; image: Buffer; width: number; height: number; runLogId: number}
+  args: {pageId: string; persona: string; browser: string; image: Buffer; width: number; height: number}
 ): void {
   db.prepare(`
-    INSERT INTO visual_baselines (page_id, persona, browser, image, width, height, captured_at, run_log_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO visual_baselines (page_id, persona, browser, image, width, height, captured_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     args.pageId, args.persona, args.browser, args.image,
-    args.width, args.height, nowIso(), args.runLogId,
+    args.width, args.height, nowIso(),
   );
 }
 
@@ -102,47 +98,24 @@ export function upsertVisualDiff(
     pageId: string;
     persona: string;
     browser: string;
-    baselineId: number | null;
+    hasBaseline: boolean;
     image: Buffer;
     width: number;
     height: number;
     diffImage: Buffer | null;
     pixelCount: number;
     pixelPct: number;
-    runLogId: number;
   }
 ): void {
   db.prepare(`
-    INSERT INTO visual_diffs (page_id, persona, browser, baseline_id, image, width, height,
-                              diff_image, pixel_count, pixel_pct, captured_at, run_log_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(page_id, persona, browser) DO UPDATE SET
-      baseline_id = excluded.baseline_id,
-      image       = excluded.image,
-      width       = excluded.width,
-      height      = excluded.height,
-      diff_image  = excluded.diff_image,
-      pixel_count = excluded.pixel_count,
-      pixel_pct   = excluded.pixel_pct,
-      captured_at = excluded.captured_at,
-      run_log_id  = excluded.run_log_id
+    INSERT OR REPLACE INTO visual_diffs (page_id, persona, browser, has_baseline, image, width, height,
+                                         diff_image, pixel_count, pixel_pct, captured_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    args.pageId, args.persona, args.browser, args.baselineId,
+    args.pageId, args.persona, args.browser, args.hasBaseline ? 1 : 0,
     args.image, args.width, args.height,
-    args.diffImage, args.pixelCount, args.pixelPct, nowIso(), args.runLogId,
+    args.diffImage, args.pixelCount, args.pixelPct, nowIso(),
   );
-}
-
-export function clearVisualDiff(
-  db: Database.Database,
-  pageId: string,
-  persona: string,
-  browser: string,
-): boolean {
-  const r = db.prepare(
-    'DELETE FROM visual_diffs WHERE page_id = ? AND persona = ? AND browser = ?'
-  ).run(pageId, persona, browser);
-  return r.changes > 0;
 }
 
 // --- a11y ------------------------------------------------------------------
@@ -151,12 +124,11 @@ export function getCurrentA11yBaseline(
   db: Database.Database,
   pageId: string,
   persona: string
-): {id: number; tree_json: string; outline: string} | null {
+): {tree_json: string; outline: string} | null {
   const row = db.prepare(`
-    SELECT id, tree_json, outline FROM a11y_baselines
+    SELECT tree_json, outline FROM a11y_baselines
     WHERE page_id = ? AND persona = ?
-    ORDER BY id DESC LIMIT 1
-  `).get(pageId, persona) as {id: number; tree_json: string; outline: string} | undefined;
+  `).get(pageId, persona) as {tree_json: string; outline: string} | undefined;
   return row ?? null;
 }
 
@@ -168,21 +140,20 @@ export function hasA11yBaseline(
   const row = db.prepare(`
     SELECT 1 FROM a11y_baselines
     WHERE page_id = ? AND persona = ?
-    LIMIT 1
   `).get(pageId, persona);
   return row !== undefined;
 }
 
-export function insertA11yBaseline(
+export function setA11yBaseline(
   db: Database.Database,
-  args: {pageId: string; persona: string; treeJson: string; outline: string; nodeCount: number; runLogId: number}
+  args: {pageId: string; persona: string; treeJson: string; outline: string; nodeCount: number}
 ): void {
   db.prepare(`
-    INSERT INTO a11y_baselines (page_id, persona, tree_json, outline, node_count, captured_at, run_log_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO a11y_baselines (page_id, persona, tree_json, outline, node_count, captured_at)
+    VALUES (?, ?, ?, ?, ?, ?)
   `).run(
     args.pageId, args.persona, args.treeJson, args.outline,
-    args.nodeCount, nowIso(), args.runLogId,
+    args.nodeCount, nowIso(),
   );
 }
 
@@ -191,39 +162,64 @@ export function upsertA11yDiff(
   args: {
     pageId: string;
     persona: string;
-    baselineId: number | null;
+    hasBaseline: boolean;
     treeJson: string;
     outline: string;
     nodeCount: number;
     diffText: string | null;
     addedCount: number;
     removedCount: number;
-    runLogId: number;
   }
 ): void {
   db.prepare(`
-    INSERT INTO a11y_diffs (page_id, persona, baseline_id, tree_json, outline,
-                            node_count, diff_text, added_count, removed_count, captured_at, run_log_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(page_id, persona) DO UPDATE SET
-      baseline_id   = excluded.baseline_id,
-      tree_json     = excluded.tree_json,
-      outline       = excluded.outline,
-      node_count    = excluded.node_count,
-      diff_text     = excluded.diff_text,
-      added_count   = excluded.added_count,
-      removed_count = excluded.removed_count,
-      captured_at   = excluded.captured_at,
-      run_log_id    = excluded.run_log_id
+    INSERT OR REPLACE INTO a11y_diffs (page_id, persona, has_baseline, tree_json, outline,
+                                       node_count, diff_text, added_count, removed_count, captured_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    args.pageId, args.persona, args.baselineId,
+    args.pageId, args.persona, args.hasBaseline ? 1 : 0,
     args.treeJson, args.outline, args.nodeCount,
-    args.diffText, args.addedCount, args.removedCount, nowIso(), args.runLogId,
+    args.diffText, args.addedCount, args.removedCount, nowIso(),
   );
 }
 
-export function clearA11yDiff(db: Database.Database, pageId: string, persona: string): boolean {
-  const r = db.prepare('DELETE FROM a11y_diffs WHERE page_id = ? AND persona = ?')
-    .run(pageId, persona);
-  return r.changes > 0;
+// --- diff clearing (at run start) ------------------------------------------
+
+export function clearAllDiffs(db: Database.Database): void {
+  db.exec('DELETE FROM visual_diffs; DELETE FROM a11y_diffs;');
+}
+
+export function clearScopedDiffs(
+  db: Database.Database,
+  args: {pageIds?: string[]; persona?: string; browser?: string}
+): void {
+  if (!args.pageIds?.length && !args.persona && !args.browser) {
+    clearAllDiffs(db);
+    return;
+  }
+  const conditions: string[] = [];
+  const params: any[] = [];
+  if (args.pageIds && args.pageIds.length > 0) {
+    const placeholders = args.pageIds.map(() => '?').join(',');
+    conditions.push(`page_id IN (${placeholders})`);
+    params.push(...args.pageIds);
+  }
+  if (args.persona) {
+    conditions.push('persona = ?');
+    params.push(args.persona);
+  }
+
+  const vConditions = [...conditions];
+  const vParams = [...params];
+  if (args.browser) {
+    vConditions.push('browser = ?');
+    vParams.push(args.browser);
+  }
+
+  const vWhere = vConditions.length ? `WHERE ${vConditions.join(' AND ')}` : '';
+  db.prepare(`DELETE FROM visual_diffs ${vWhere}`).run(...vParams);
+
+  if (!args.browser || args.browser.includes('chromium')) {
+    const aWhere = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    db.prepare(`DELETE FROM a11y_diffs ${aWhere}`).run(...params);
+  }
 }

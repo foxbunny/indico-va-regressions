@@ -1,18 +1,18 @@
-"""Thin Flask app for reviewing visual-regression results.
+"""Thin Flask app for reviewing visual-regression results (read-only).
 
-Two views:
-  /         — dashboard. Default tab: open diffs (the things needing attention).
-              Secondary tab: all baselines (with history counts).
-  /history  — per-(page,persona) baseline history (image/tree timeline).
+Shows:
+  /          — dashboard: diffs from the latest run.
+  /baselines — current baseline snapshots.
+  /runs      — run log.
 
 The whole UI is a single-page vanilla-JS app under static/. Flask just serves
-JSON + raw PNG/JSON bytes from SQLite.
+JSON + raw PNG/JSON/text bytes from SQLite.
 """
 
 import sys
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, send_from_directory
 
 THIS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(THIS_DIR.parent))
@@ -38,11 +38,11 @@ def spa(_path=''):
     return send_from_directory(STATIC_DIR, 'index.html')
 
 
-# --- diffs (current open proposals) -----------------------------------------
+# --- diffs (transient from latest run) --------------------------------------
 
 @app.route('/api/diffs')
 def api_diffs():
-    """All open diffs, sorted by page+persona. Default dashboard."""
+    """All diffs from the latest run, sorted by page+persona."""
     conn = get_conn()
     try:
         return jsonify({
@@ -77,180 +77,16 @@ def api_a11y_diff_one(page_id, persona):
         conn.close()
 
 
-@app.route('/api/diffs/visual/<browser>/<page_id>/<persona>/accept', methods=['POST'])
-def api_accept_visual(browser, page_id, persona):
-    """Promote the open visual diff to a new baseline. Drops the diff row."""
-    conn = get_conn()
-    try:
-        if not store.accept_visual(conn, page_id, persona, browser):
-            abort(404)
-        return jsonify({'status': 'accepted'})
-    finally:
-        conn.close()
-
-
-@app.route('/api/diffs/a11y/<page_id>/<persona>/accept', methods=['POST'])
-def api_accept_a11y(page_id, persona):
-    conn = get_conn()
-    try:
-        if not store.accept_a11y(conn, page_id, persona):
-            abort(404)
-        return jsonify({'status': 'accepted'})
-    finally:
-        conn.close()
-
-
-@app.route('/api/diffs/accept-selected', methods=['POST'])
-def api_accept_selected():
-    """Accept a caller-supplied set of diffs in one request/transaction.
-
-    Body: ``{"items": [{"page_id", "persona", "browsers": [...], "a11y": bool}]}``.
-    """
-    payload = request.get_json(silent=True) or {}
-    items = payload.get('items')
-    if not isinstance(items, list):
-        abort(400, 'items must be a list')
-    conn = get_conn()
-    try:
-        return jsonify(store.accept_selected(conn, items))
-    finally:
-        conn.close()
-
-
-@app.route('/api/diffs/accept-all', methods=['POST'])
-def api_accept_all():
-    kind = request.args.get('kind')
-    browser = request.args.get('browser')
-    if kind not in (None, 'visual', 'a11y'):
-        abort(400, 'kind must be visual or a11y')
-    if browser is not None and kind == 'a11y':
-        abort(400, 'browser filter does not apply to a11y')
-    conn = get_conn()
-    try:
-        return jsonify(store.accept_all(conn, kind=kind, browser=browser))
-    finally:
-        conn.close()
-
-
-@app.route('/api/diffs/revert-all', methods=['POST'])
-def api_revert_all():
-    """Inverse of accept-all: pop each baseline's most recent accept back into a
-    pending diff. Returns counts per modality (0 for entries with nothing to
-    revert)."""
-    kind = request.args.get('kind')
-    browser = request.args.get('browser')
-    if kind not in (None, 'visual', 'a11y'):
-        abort(400, 'kind must be visual or a11y')
-    if browser is not None and kind == 'a11y':
-        abort(400, 'browser filter does not apply to a11y')
-    conn = get_conn()
-    try:
-        return jsonify(store.revert_all(conn, kind=kind, browser=browser))
-    finally:
-        conn.close()
-
-
-@app.route('/api/diffs/delete-selected', methods=['POST'])
-def api_delete_selected():
-    """Drop a caller-supplied set of diffs (no promotion to baseline).
-
-    Body mirrors accept-selected: ``{"items": [{page_id, persona, browsers, a11y}]}``.
-    """
-    payload = request.get_json(silent=True) or {}
-    items = payload.get('items')
-    if not isinstance(items, list):
-        abort(400, 'items must be a list')
-    conn = get_conn()
-    try:
-        return jsonify(store.delete_selected(conn, items))
-    finally:
-        conn.close()
-
-
-@app.route('/api/diffs/delete-all', methods=['POST'])
-def api_delete_all():
-    """Drop every open diff, optionally scoped by kind / browser / run.
-
-    ``run`` is the capture run_log_id to scope to; the literal ``none`` targets
-    the rows with no run id (written before the column existed).
-    """
-    kind = request.args.get('kind')
-    browser = request.args.get('browser')
-    run = request.args.get('run')
-    if kind not in (None, 'visual', 'a11y'):
-        abort(400, 'kind must be visual or a11y')
-    if browser is not None and kind == 'a11y':
-        abort(400, 'browser filter does not apply to a11y')
-    kwargs = {'kind': kind, 'browser': browser}
-    if run is not None:
-        if run == 'none':
-            kwargs['run_log_id'] = None
-        else:
-            try:
-                kwargs['run_log_id'] = int(run)
-            except ValueError:
-                abort(400, 'run must be an integer or "none"')
-    conn = get_conn()
-    try:
-        return jsonify(store.delete_all(conn, **kwargs))
-    finally:
-        conn.close()
-
-
-# --- baselines (history) ----------------------------------------------------
+# --- baselines (current canonical master snapshot) -------------------------
 
 @app.route('/api/baselines')
 def api_baselines():
-    """Current baselines (one per page+persona) plus history_size."""
     conn = get_conn()
     try:
         return jsonify({
             'visual': store.list_visual_baselines(conn),
             'a11y':   store.list_a11y_baselines(conn),
         })
-    finally:
-        conn.close()
-
-
-@app.route('/api/baselines/visual/<browser>/<page_id>/<persona>')
-def api_visual_baseline_history(browser, page_id, persona):
-    conn = get_conn()
-    try:
-        return jsonify(store.baseline_history(
-            conn, 'visual_baselines', page_id, persona, browser=browser,
-        ))
-    finally:
-        conn.close()
-
-
-@app.route('/api/baselines/a11y/<page_id>/<persona>')
-def api_a11y_baseline_history(page_id, persona):
-    conn = get_conn()
-    try:
-        return jsonify(store.baseline_history(conn, 'a11y_baselines', page_id, persona))
-    finally:
-        conn.close()
-
-
-@app.route('/api/baselines/visual/<browser>/<page_id>/<persona>/reset', methods=['POST'])
-def api_reset_visual_baseline(browser, page_id, persona):
-    """Drop the entire visual baseline history for this page+persona+browser."""
-    conn = get_conn()
-    try:
-        if not store.reset_visual_baseline(conn, page_id, persona, browser):
-            abort(404, 'no baseline existed')
-        return jsonify({'status': 'reset'})
-    finally:
-        conn.close()
-
-
-@app.route('/api/baselines/a11y/<page_id>/<persona>/reset', methods=['POST'])
-def api_reset_a11y_baseline(page_id, persona):
-    conn = get_conn()
-    try:
-        if not store.reset_a11y_baseline(conn, page_id, persona):
-            abort(404, 'no baseline existed')
-        return jsonify({'status': 'reset'})
     finally:
         conn.close()
 
@@ -294,31 +130,6 @@ def img_current_baseline(browser, page_id, persona):
     conn = get_conn()
     try:
         blob = store.get_current_baseline_image(conn, page_id, persona, browser)
-        if blob is None:
-            abort(404)
-        return blob, 200, {'Content-Type': 'image/png'}
-    finally:
-        conn.close()
-
-
-@app.route('/img/baseline/by-id/<int:baseline_id>.png')
-def img_baseline_by_id(baseline_id):
-    conn = get_conn()
-    try:
-        blob = store.get_baseline_image_by_id(conn, baseline_id)
-        if blob is None:
-            abort(404)
-        return blob, 200, {'Content-Type': 'image/png'}
-    finally:
-        conn.close()
-
-
-@app.route('/img/baseline-diff/by-id/<int:baseline_id>.png')
-def img_baseline_diff_by_id(baseline_id):
-    """The diff overlay that was current when this baseline was accepted."""
-    conn = get_conn()
-    try:
-        blob = store.get_baseline_diff_image(conn, baseline_id)
         if blob is None:
             abort(404)
         return blob, 200, {'Content-Type': 'image/png'}
@@ -373,48 +184,6 @@ def outline_proposal(page_id, persona):
         if text is None:
             abort(404)
         return text, 200, {'Content-Type': 'text/plain; charset=utf-8'}
-    finally:
-        conn.close()
-
-
-@app.route('/tree/baseline/by-id/<int:baseline_id>')
-def tree_baseline_by_id(baseline_id):
-    conn = get_conn()
-    try:
-        text = store.get_baseline_tree_by_id(conn, baseline_id)
-        if text is None:
-            abort(404)
-        return text, 200, {'Content-Type': 'application/json'}
-    finally:
-        conn.close()
-
-
-@app.route('/outline/baseline/by-id/<int:baseline_id>')
-def outline_baseline_by_id(baseline_id):
-    conn = get_conn()
-    try:
-        text = store.get_baseline_outline_by_id(conn, baseline_id)
-        if text is None:
-            abort(404)
-        return text, 200, {'Content-Type': 'text/plain; charset=utf-8'}
-    finally:
-        conn.close()
-
-
-@app.route('/api/baseline-step/<kind>/<int:baseline_id>')
-def api_baseline_step(kind, baseline_id):
-    """Metadata + the stored diff for a single accepted baseline step."""
-    conn = get_conn()
-    try:
-        if kind == 'visual':
-            meta = store.get_visual_baseline_meta(conn, baseline_id)
-        elif kind == 'a11y':
-            meta = store.get_a11y_baseline_meta(conn, baseline_id)
-        else:
-            abort(404)
-        if meta is None:
-            abort(404)
-        return jsonify(meta)
     finally:
         conn.close()
 

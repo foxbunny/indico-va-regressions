@@ -9,16 +9,16 @@ import {buildStorageStates, loadPersonas, newPersonaContext, Personas} from './a
 import {canonicalize, compareTrees, countNodes, outline} from './a11y_diff.js';
 import {installClipboardStub, installStabilizers, waitForStable} from './stabilize.js';
 import {
-  clearA11yDiff,
-  clearVisualDiff,
+  clearAllDiffs,
+  clearScopedDiffs,
   finishRunLog,
   getCurrentA11yBaseline,
   getCurrentVisualBaseline,
   hasA11yBaseline,
   hasVisualBaseline,
-  insertA11yBaseline,
-  insertVisualBaseline,
   openDb,
+  setA11yBaseline,
+  setVisualBaseline,
   startRunLog,
   upsertA11yDiff,
   upsertVisualDiff,
@@ -147,6 +147,9 @@ function parseCli() {
       // row, no review step). Handles both the empty-DB first-run case and
       // incremental backfill after adding new pages/personas/scenarios.
       'only-missing': {type: 'boolean', default: false},
+      // Update baseline snapshots directly from the current render (run on master).
+      // Overwrites existing baselines.
+      'update-baselines': {type: 'boolean', default: false},
       // Comma-separated browser list. A11y is captured in chromium only,
       // regardless of this flag — firefox has no CDP-equivalent AT-tree.
       'browser': {type: 'string', default: 'chromium,firefox'},
@@ -285,6 +288,7 @@ async function main() {
   const onlyVisual = Boolean(args['only-visual']);
   const onlyA11y = Boolean(args['only-a11y']);
   const onlyMissing = Boolean(args['only-missing']);
+  const updateBaselines = Boolean(args['update-baselines']);
   const browsers = parseBrowsers(String(args.browser));
 
   const personas: Personas = loadPersonas();
@@ -294,18 +298,29 @@ async function main() {
   const db = openDb();
   const filterRepr = JSON.stringify({
     filter: filterModule, persona: filterPersona, page: filterPage,
-    onlyVisual, onlyA11y, browsers,
+    onlyVisual, onlyA11y, browsers, updateBaselines, onlyMissing,
   });
   const git = gitInfo();
   const runLog = startRunLog(db, {filter: filterRepr, gitHead: git.head, gitDirty: git.dirty});
   console.log(`[runner] starting (base=${baseUrl}, browsers=${browsers.join(',')})`);
 
+  // Clear older transient diffs for the targeted scope so this run only surfaces
+  // its own diffs.
+  const matchingPageIds = pages
+    .filter(p => (!filterModule || p.module === filterModule) && (!filterPage || p.id === filterPage))
+    .map(p => p.id);
+  clearScopedDiffs(db, {
+    pageIds: matchingPageIds,
+    persona: filterPersona ?? undefined,
+    browser: browsers.length === 1 ? browsers[0] : undefined,
+  });
+
   console.log('[runner] logging in personas...');
   const storageStates = await buildStorageStates(baseUrl, personas);
 
   const counts = {
-    newVisual: 0, changedVisual: 0, clearedVisual: 0,
-    newA11y:   0, changedA11y:   0, clearedA11y:   0,
+    newVisual: 0, changedVisual: 0,
+    newA11y:   0, changedA11y:   0,
   };
 
   for (const browserName of browsers) {
@@ -379,11 +394,10 @@ async function main() {
           const captured = await capture(page, entry, doA11y);
 
           if (doVisual) {
-            if (onlyMissing) {
-              insertVisualBaseline(db, {
+            if (updateBaselines || onlyMissing) {
+              setVisualBaseline(db, {
                 pageId: entry.id, persona: personaName, browser: browserName,
                 image: captured.image, width: captured.width, height: captured.height,
-                runLogId: runLog.id,
               });
               counts.newVisual += 1;
             } else {
@@ -391,23 +405,19 @@ async function main() {
               if (!baseline) {
                 upsertVisualDiff(db, {
                   pageId: entry.id, persona: personaName, browser: browserName,
-                  baselineId: null,
+                  hasBaseline: false,
                   image: captured.image, width: captured.width, height: captured.height,
                   diffImage: null, pixelCount: 0, pixelPct: 0,
-                  runLogId: runLog.id,
                 });
                 counts.newVisual += 1;
               } else {
                 const cmp = compareImages(baseline.image, captured.image);
-                if (cmp.unchanged) {
-                  if (clearVisualDiff(db, entry.id, personaName, browserName)) counts.clearedVisual += 1;
-                } else {
+                if (!cmp.unchanged) {
                   upsertVisualDiff(db, {
                     pageId: entry.id, persona: personaName, browser: browserName,
-                    baselineId: baseline.id,
+                    hasBaseline: true,
                     image: captured.image, width: captured.width, height: captured.height,
                     diffImage: cmp.diffImage, pixelCount: cmp.pixelCount, pixelPct: cmp.pixelPct,
-                    runLogId: runLog.id,
                   });
                   counts.changedVisual += 1;
                 }
@@ -419,11 +429,10 @@ async function main() {
             const treeJson = canonicalize(captured.tree);
             const treeOutline = outline(captured.tree);
             const nodeCount = countNodes(captured.tree);
-            if (onlyMissing) {
-              insertA11yBaseline(db, {
+            if (updateBaselines || onlyMissing) {
+              setA11yBaseline(db, {
                 pageId: entry.id, persona: personaName,
                 treeJson, outline: treeOutline, nodeCount,
-                runLogId: runLog.id,
               });
               counts.newA11y += 1;
             } else {
@@ -431,23 +440,19 @@ async function main() {
               if (!baseline) {
                 upsertA11yDiff(db, {
                   pageId: entry.id, persona: personaName,
-                  baselineId: null,
+                  hasBaseline: false,
                   treeJson, outline: treeOutline, nodeCount,
                   diffText: null, addedCount: 0, removedCount: 0,
-                  runLogId: runLog.id,
                 });
                 counts.newA11y += 1;
               } else {
                 const cmp = compareTrees(baseline.tree_json, treeJson);
-                if (cmp.unchanged) {
-                  if (clearA11yDiff(db, entry.id, personaName)) counts.clearedA11y += 1;
-                } else {
+                if (!cmp.unchanged) {
                   upsertA11yDiff(db, {
                     pageId: entry.id, persona: personaName,
-                    baselineId: baseline.id,
+                    hasBaseline: true,
                     treeJson, outline: treeOutline, nodeCount,
                     diffText: cmp.diffText, addedCount: cmp.added, removedCount: cmp.removed,
-                    runLogId: runLog.id,
                   });
                   counts.changedA11y += 1;
                 }
@@ -467,21 +472,18 @@ async function main() {
   db.close();
 
   console.log('[runner] summary:');
-  if (onlyMissing) {
+  if (updateBaselines) {
+    console.log(`  visual: ${counts.newVisual} baseline(s) updated`);
+    console.log(`  a11y  : ${counts.newA11y} baseline(s) updated`);
+  } else if (onlyMissing) {
     console.log(`  visual: ${counts.newVisual} new baseline(s)`);
     console.log(`  a11y  : ${counts.newA11y} new baseline(s)`);
   } else {
-    console.log(`  visual: ${counts.changedVisual} changed, ${counts.newVisual} new, ${counts.clearedVisual} cleared`);
-    console.log(`  a11y  : ${counts.changedA11y} changed, ${counts.newA11y} new, ${counts.clearedA11y} cleared`);
+    console.log(`  visual: ${counts.changedVisual} changed, ${counts.newVisual} new`);
+    console.log(`  a11y  : ${counts.changedA11y} changed, ${counts.newA11y} new`);
   }
 
-  // In --only-missing mode every "new" entry is a baseline that was just
-  // established, not a diff to review -- the run is always a success. Outside
-  // that mode, anything new or changed is something the reviewer should see.
-  // Exit 3 is the "diffs present" signal -- deliberately distinct from 1/2 so
-  // the wrapper script can tell it apart from a crash (2) or a docker-level
-  // failure (usually 1) and not report "diffs present" when nothing ran.
-  if (onlyMissing) process.exit(0);
+  if (updateBaselines || onlyMissing) process.exit(0);
   const openDiffs = counts.changedVisual + counts.newVisual + counts.changedA11y + counts.newA11y;
   process.exit(openDiffs > 0 ? 3 : 0);
 }

@@ -2,33 +2,16 @@
 # Visual & accessibility regression suite entry point.
 #
 # Subcommands:
-#   (default)         run the full capture+diff (drops+seeds the test DB
-#                     and starts Indico inside docker)
-#   setup             pre-build the indico + runner images (optional warm-up)
-#   review            launch the host-side Flask review UI on port 8002
-#   accept-all [--browser <name>]
-#                     bulk-accept every open diff (optionally one browser only)
-#   backfill [filter flags]
-#                     capture only the (page, persona, browser, modality)
-#                     combos that have no baseline yet, and write them
-#                     straight to *_baselines. Use it for the very first run
-#                     (empty DB) and for incremental backfill after adding new
-#                     pages/personas/scenarios. Accepts the same filter flags
-#                     as the default run.
-#   flush [filter flags]
-#                     capture a full run then bulk-accept every resulting diff
-#                     in one step — promote the current Indico render to
-#                     baseline wholesale, with no review. Use after pulling a
-#                     master that intentionally changed rendering. Accepts the
-#                     same filter flags as the default run; the filters scope
-#                     the capture, while the accept is global per browser.
-#   revert [--browser <name>] [--kind visual|a11y]
-#                     undo the most recently captured run's accepts (every row
-#                     carries its capture run), restoring their pending diffs
-#   wipe-baselines    drop both baseline tables (with confirmation)
-#   shell             open a bash shell in the runner container
-#   logs              tail the Indico server logs
-#   down              tear down the compose stack
+#   (default)            run capture and diff against master baseline
+#   update-baselines     capture current state and save directly as the baseline
+#                        snapshot (run on master). Accepts filter flags.
+#   backfill             capture only missing combos that have no baseline yet.
+#   review               launch the read-only review UI on port 8002
+#   setup                pre-build the indico + runner images (optional warm-up)
+#   wipe-baselines       drop all baselines (with confirmation)
+#   shell                open a bash shell in the runner container
+#   logs                 tail the Indico server logs
+#   down                 tear down the compose stack
 #
 # Default-subcommand flags forwarded to the runner:
 #   --filter <module>, --persona <name>, --page <id>,
@@ -132,12 +115,6 @@ cmd_default() {
   "${DC[@]}" up -d --wait indico
 
   color info "running snapshot + diff"
-  # --no-deps: indico is already up (and freshly seeded) from the `up --wait`
-  # above. Without it, `run --build` also re-bakes the indico image, whose
-  # huge npm-ci layer is a prime buildkit-GC eviction target — rebuilding it
-  # is slow and network-dependent and has nothing to do with capturing
-  # (the indico container bind-mounts the live source anyway). Rebuild it
-  # explicitly with `setup` when its dependencies actually change.
   set +e
   "${DC[@]}" run --rm --build --no-deps runner "${runner_args[@]}"
   local rc=$?
@@ -146,14 +123,10 @@ cmd_default() {
   color info "tearing down stack"
   "${DC[@]}" down --remove-orphans >/dev/null
 
-  # Runner exit codes: 0 = no diffs, 3 = diffs present, 2 = runner crashed.
-  # Anything else means the runner never ran (docker/compose/build failure) —
-  # don't claim "diffs present" when nothing was captured.
   case "$rc" in
     0) color ok "no diffs — exit 0" ;;
     3) color warn "diffs present — review with: $0 review" ;;
-    2) color err "runner crashed — no results were recorded; see output above" ;;
-    *) color err "run failed before capturing anything (exit $rc) — likely a docker/build error; see output above" ;;
+    *) color err "runner exited with code $rc (likely crashed; see output above)" ;;
   esac
   exit "$rc"
 }
@@ -165,29 +138,42 @@ cmd_review() {
   "$PY" "$SCRIPT_DIR/review/app.py"
 }
 
-run_accept_all() {
-  # Promote every open diff to baseline. $1 (optional) scopes to one browser.
-  local browser="${1:-}"
-  PYTHONPATH="$SCRIPT_DIR" "$PY" -c "
-import sys
-from storage.db import connect, accept_all
-conn = connect()
-counts = accept_all(conn, browser=(sys.argv[1] or None))
-print(f'accepted: visual={counts[\"visual\"]} a11y={counts[\"a11y\"]}')
-conn.close()
-" "$browser"
-}
+cmd_update_baselines() {
+  require_docker
+  require_indico_src
 
-cmd_accept_all() {
-  require_py
-  local browser=""
-  while [[ $# -gt 0 ]]; do
+  local runner_args=(--update-baselines)
+  while (( $# > 0 )); do
     case "$1" in
-      --browser) browser="${2:-}"; shift 2 ;;
-      *) color err "usage: $0 accept-all [--browser <name>]"; exit 1 ;;
+      --filter|--persona|--page|--browser)
+        runner_args+=("$1" "$2"); shift ;;
+      --only-visual|--only-a11y)
+        runner_args+=("$1") ;;
+      *) color err "unknown flag $1"; exit 1 ;;
     esac
+    shift
   done
-  run_accept_all "$browser"
+
+  ensure_baselines_db
+
+  color info "starting indico stack (drops+seeds indico_visual on boot)"
+  "${DC[@]}" up -d --wait indico
+
+  color info "capturing and updating baseline snapshots"
+  set +e
+  "${DC[@]}" run --rm --build --no-deps runner "${runner_args[@]}"
+  local rc=$?
+  set -e
+
+  color info "tearing down stack"
+  "${DC[@]}" down --remove-orphans >/dev/null
+
+  if [[ "$rc" -eq 0 ]]; then
+    color ok "baselines updated"
+  else
+    color err "failed to update baselines (exit $rc)"
+    exit "$rc"
+  fi
 }
 
 cmd_backfill() {
@@ -212,8 +198,6 @@ cmd_backfill() {
   "${DC[@]}" up -d --wait indico
 
   color info "capturing baselines for missing entries only"
-  # --no-deps for the same reason as the default run: indico is already up,
-  # and re-baking its image here is slow, network-dependent, and unnecessary.
   set +e
   "${DC[@]}" run --rm --build --no-deps runner "${runner_args[@]}"
   local rc=$?
@@ -223,74 +207,6 @@ cmd_backfill() {
   "${DC[@]}" down --remove-orphans >/dev/null
 
   exit "$rc"
-}
-
-cmd_flush() {
-  require_docker
-  require_indico_src
-  require_py
-
-  local runner_args=() browser=""
-  while (( $# > 0 )); do
-    case "$1" in
-      --filter|--persona|--page)
-        runner_args+=("$1" "$2"); shift ;;
-      --browser)
-        runner_args+=("$1" "$2"); browser="$2"; shift ;;
-      --only-visual|--only-a11y)
-        runner_args+=("$1") ;;
-      *) color err "unknown flag $1"; exit 1 ;;
-    esac
-    shift
-  done
-
-  ensure_baselines_db
-
-  color info "starting indico stack (drops+seeds indico_visual on boot)"
-  "${DC[@]}" up -d --wait indico
-
-  color info "running snapshot + diff"
-  # --no-deps: indico is already up and freshly seeded — same reasoning as the
-  # default run; don't re-bake the indico image just to capture.
-  set +e
-  "${DC[@]}" run --rm --build --no-deps runner "${runner_args[@]}"
-  local rc=$?
-  set -e
-
-  color info "tearing down stack"
-  "${DC[@]}" down --remove-orphans >/dev/null
-
-  # Only accept once we know the runner actually ran and recorded results.
-  # 0 = no diffs (nothing to accept; harmless), 3 = diffs present. Anything
-  # else means the runner crashed or never ran — leave baselines untouched.
-  if [[ "$rc" != 0 && "$rc" != 3 ]]; then
-    color err "capture failed (exit $rc) — baselines left untouched; see output above"
-    exit "$rc"
-  fi
-
-  color info "accepting all open diffs"
-  run_accept_all "$browser"
-  color ok "baselines flushed"
-}
-
-cmd_revert() {
-  require_py
-  local browser="" kind=""
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --browser) browser="${2:-}"; shift 2 ;;
-      --kind)    kind="${2:-}"; shift 2 ;;
-      *) color err "usage: $0 revert [--browser <name>] [--kind visual|a11y]"; exit 1 ;;
-    esac
-  done
-  PYTHONPATH="$SCRIPT_DIR" "$PY" -c "
-import sys
-from storage.db import connect, revert_all
-conn = connect()
-counts = revert_all(conn, kind=(sys.argv[1] or None), browser=(sys.argv[2] or None))
-print(f'reverted: visual={counts[\"visual\"]} a11y={counts[\"a11y\"]}')
-conn.close()
-" "$kind" "$browser"
 }
 
 cmd_wipe_baselines() {
@@ -331,16 +247,15 @@ main() {
     return
   fi
   case "$1" in
-    setup)          shift; cmd_setup "$@" ;;
-    review)         shift; cmd_review "$@" ;;
-    accept-all)     shift; cmd_accept_all "$@" ;;
-    backfill)       shift; cmd_backfill "$@" ;;
-    flush)          shift; cmd_flush "$@" ;;
-    revert)         shift; cmd_revert "$@" ;;
-    wipe-baselines) shift; cmd_wipe_baselines "$@" ;;
-    shell)          shift; cmd_shell "$@" ;;
-    logs)           shift; cmd_logs "$@" ;;
-    down)           shift; cmd_down "$@" ;;
+    setup)             shift; cmd_setup "$@" ;;
+    review)            shift; cmd_review "$@" ;;
+    update-baselines)  shift; cmd_update_baselines "$@" ;;
+    flush)             shift; cmd_update_baselines "$@" ;; # alias for update-baselines
+    backfill)          shift; cmd_backfill "$@" ;;
+    wipe-baselines)    shift; cmd_wipe_baselines "$@" ;;
+    shell)             shift; cmd_shell "$@" ;;
+    logs)              shift; cmd_logs "$@" ;;
+    down)              shift; cmd_down "$@" ;;
     --help|-h)
       sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
       ;;

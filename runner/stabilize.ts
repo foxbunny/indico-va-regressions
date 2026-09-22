@@ -35,7 +35,7 @@ export async function installStabilizers(page: Page, frozenIso: string): Promise
     const frozenMs = new realDate(frozen as string).getTime();
     const driftStart = realDate.now();
     class FrozenDate extends realDate {
-      constructor(...args: ConstructorParameters<typeof Date>) {
+      constructor(...args: any[]) {
         if (args.length === 0) {
           super(frozenMs);
         } else {
