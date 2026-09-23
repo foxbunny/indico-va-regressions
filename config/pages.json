@@ -278,6 +278,88 @@
     ]
   },
   {
+    "id": "category-navigator-root",
+    "module": "categories",
+    "path": "/",
+    "personas": [
+      "anonymous"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".category-list"
+      }
+    ]
+  },
+  {
+    "id": "category-navigator-child",
+    "module": "categories",
+    "path": "/category/{childCategoryId}/",
+    "personas": [
+      "anonymous"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".category-list"
+      }
+    ]
+  },
+  {
+    "id": "category-navigator-search",
+    "module": "categories",
+    "path": "/",
+    "personas": [
+      "anonymous"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": "input[type='search'], input[placeholder='Search']"
+      },
+      {
+        "fill": {
+          "selector": "input[type='search'], input[placeholder='Search']",
+          "text": "Child"
+        }
+      },
+      {
+        "waitFor": ".search-result-list, .search-results-list"
+      }
+    ]
+  },
+  {
+    "id": "category-navigator-search-empty",
+    "module": "categories",
+    "path": "/",
+    "personas": [
+      "anonymous"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": "input[type='search'], input[placeholder='Search']"
+      },
+      {
+        "fill": {
+          "selector": "input[type='search'], input[placeholder='Search']",
+          "text": "NonExistentCategoryQuery"
+        }
+      },
+      {
+        "waitFor": ".placeholder-text"
+      }
+    ]
+  },
+  {
     "id": "event-lecture-display",
     "module": "events",
     "path": "/event/{lectureEventId}/",
