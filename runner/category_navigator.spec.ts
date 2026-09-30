@@ -234,3 +234,17 @@ test('a rejected action after confirmation brings the navigator back', async ({p
   await page.locator('.ui-dialog:visible button:has-text("OK")').click();
   await expect(page.locator('#category-navigator:modal')).toBeVisible();
 });
+
+test('Escape closes the navigator while the close tooltip is shown', async ({page}) => {
+  test.skip(baseline);
+  await page.goto(`/category/${manifest.navigatorParentId}/`);
+  await page.locator('#navigate-button').click();
+  const dialog = page.locator('#category-navigator');
+  await expect(dialog).toBeFocused();
+  const closeTooltip = dialog.locator('.titlebar ind-with-tooltip');
+  await closeTooltip.locator('button').hover();
+  await expect(closeTooltip).toHaveAttribute('shown', '');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('#navigate-button')).toBeFocused();
+});
