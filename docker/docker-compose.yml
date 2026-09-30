@@ -32,6 +32,9 @@ services:
       # Absolute path — relative paths in `dockerfile:` resolve against the
       # build context (Indico's source root), which can't see our repo.
       dockerfile: ${INDICO_REGRESSIONS_DOCKERFILE:?set INDICO_REGRESSIONS_DOCKERFILE}
+      # Build with host networking: the default bridge network can't reach GitHub here,
+      # which breaks `npm ci` whenever an image is built from scratch.
+      network: host
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,6 +66,9 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.runner
+      # Build with host networking: the default bridge network can't reach GitHub here,
+      # which breaks `npm ci` whenever an image is built from scratch.
+      network: host
     depends_on:
       indico:
         condition: service_healthy
@@ -75,3 +81,19 @@ services:
     entrypoint: ["/regressions/docker/entrypoint-runner.sh"]
     command: []
     profiles: ["run"]
+
+  # Orca screen reader reading Chromium on a virtual display; see runner/screenreader/.
+  screenreader:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.orca
+      network: host
+    depends_on:
+      indico:
+        condition: service_healthy
+    environment:
+      - BASE_URL=http://indico:8000
+    volumes:
+      - ..:/regressions:rw
+    entrypoint: ["/regressions/runner/screenreader/orca-run.sh"]
+    profiles: ["screenreader"]

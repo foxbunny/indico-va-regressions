@@ -241,11 +241,20 @@
         "waitFor": ".ui.popup a.ui.button[href]"
       }
     ],
-    "hover": ".ui.action.input ind-with-tooltip",
-    "hoverWaitFor": ".ui.action.input ind-with-tooltip[shown]",
+    "hover": ".ui.popup button[title=\"Copy to clipboard\"]",
     "mask": [
       ".ui.popup input"
-    ]
+    ],
+    "candidateChecks": {
+      "visible": [
+        ".ui.popup button[title=\"Copy to clipboard\"]"
+      ]
+    },
+    "baselineChecks": {
+      "visible": [
+        ".ui.popup button[title=\"Copy to clipboard\"]"
+      ]
+    }
   },
   {
     "id": "category-export-popup-download-tip",
@@ -262,11 +271,20 @@
         "waitFor": ".ui.popup a.ui.button[href]"
       }
     ],
-    "hover": "ind-with-tooltip:has(a.ui.button)",
-    "hoverWaitFor": "ind-with-tooltip:has(a.ui.button)[shown]",
+    "hover": ".ui.popup a[title=\"Download\"]",
     "mask": [
       ".ui.popup input"
-    ]
+    ],
+    "candidateChecks": {
+      "visible": [
+        ".ui.popup a[title=\"Download\"]"
+      ]
+    },
+    "baselineChecks": {
+      "visible": [
+        ".ui.popup a[title=\"Download\"]"
+      ]
+    }
   },
   {
     "id": "category-child-display",
@@ -902,5 +920,1010 @@
         "waitFor": ".ui.modal.visible .ui.selection.dropdown"
       }
     ]
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-initial-focus",
+    "candidateChecks": {
+      "visible": [
+        "#category-navigator:focus",
+        "#category-navigator:modal"
+      ],
+      "absent": [
+        "#category-navigator .search input:focus"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-root-centered",
+    "candidateChecks": {
+      "visible": [
+        "#category-navigator:focus",
+        "#category-navigator:modal"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": "#category-navigator .search input:focus, input[type='search']:focus",
+          "max": 35
+        }
+      }
+    ],
+    "id": "navigator-search-focus",
+    "candidateChecks": {
+      "visible": [
+        "#category-navigator .search input:focus",
+        "#category-navigator:modal"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": "button[value='close']:focus, .ui-dialog-titlebar-close:focus",
+          "max": 35
+        }
+      }
+    ],
+    "id": "navigator-close-focus",
+    "candidateChecks": {
+      "visible": [
+        "button[value='close']:focus",
+        ".titlebar ind-with-tooltip[shown]",
+        "#category-navigator:modal"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": ".navigate-up:focus",
+          "max": 35
+        }
+      }
+    ],
+    "id": "navigator-parent-focus",
+    "candidateChecks": {
+      "visible": [
+        ".navigate-up:focus",
+        ".parent-category-control[shown]",
+        "#category-navigator:modal"
+      ]
+    },
+    "baselineActions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "baselineChecks": {
+      "visible": [
+        ".navigate-up:not([href]):not([tabindex])"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": ".breadcrumb-button:focus, .breadcrumbs a[href]:focus",
+          "max": 35
+        }
+      }
+    ],
+    "id": "navigator-breadcrumb-focus",
+    "candidateChecks": {
+      "visible": [
+        ".breadcrumb-button:focus",
+        ".breadcrumbs ind-with-tooltip[shown] >> nth=0",
+        "#category-navigator:modal"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": ".subcategory .category-drill-button:focus",
+          "max": 35
+        }
+      }
+    ],
+    "id": "navigator-drilldown-focus",
+    "candidateChecks": {
+      "visible": [
+        ".subcategory .category-drill-button:focus",
+        "#category-navigator:modal"
+      ],
+      "hidden": [
+        ".category-drill-button:focus .icon-folder"
+      ]
+    },
+    "baselineActions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "baselineChecks": {
+      "visible": [
+        ".subcategory.js-go-to:not([tabindex]) >> nth=0"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": ".current-category .category-action-button:focus",
+          "max": 35
+        }
+      }
+    ],
+    "id": "navigator-action-focus",
+    "candidateChecks": {
+      "visible": [
+        ".current-category .category-action-button:focus",
+        "#category-navigator:modal"
+      ]
+    },
+    "baselineActions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "baselineChecks": {
+      "hidden": [
+        ".current-category span.action-button:not([tabindex])"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": ".close-bar-button:focus, .ui-dialog button[data-button-back]:focus",
+          "max": 35
+        }
+      }
+    ],
+    "id": "navigator-footer-focus",
+    "candidateChecks": {
+      "visible": [
+        ".close-bar-button:focus",
+        "#category-navigator:modal"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "fill": {
+          "selector": "input[placeholder='Search']",
+          "text": "Navigator"
+        }
+      },
+      {
+        "waitFor": ".search-results-list .item"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": "button[value='clear-search']:focus",
+          "max": 35
+        }
+      }
+    ],
+    "id": "navigator-clear-focus",
+    "candidateChecks": {
+      "visible": [
+        "button[value='clear-search']:focus",
+        ".search ind-with-tooltip[shown]",
+        "#category-navigator:modal"
+      ]
+    },
+    "baselineActions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "fill": {
+          "selector": "input[placeholder='Search']",
+          "text": "Navigator"
+        }
+      },
+      {
+        "waitFor": ".search-results-list .item"
+      }
+    ],
+    "baselineChecks": {
+      "visible": [
+        ".clearableinput .button-box a:not([href]):not([tabindex])"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "fill": {
+          "selector": "input[placeholder='Search']",
+          "text": "Navigator"
+        }
+      },
+      {
+        "waitFor": ".search-results-list .item"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": ".search-result .category-drill-button:focus",
+          "max": 35
+        }
+      }
+    ],
+    "id": "navigator-search-result-focus",
+    "candidateChecks": {
+      "visible": [
+        ".search-result .category-drill-button:focus",
+        "#category-navigator:modal"
+      ]
+    },
+    "baselineActions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "fill": {
+          "selector": "input[placeholder='Search']",
+          "text": "Navigator"
+        }
+      },
+      {
+        "waitFor": ".search-results-list .item"
+      }
+    ],
+    "baselineChecks": {
+      "visible": [
+        ".search-results-list .subcategory.js-go-to:not([tabindex]) >> nth=0"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-close-tooltip",
+    "candidateChecks": {
+      "visible": [
+        ".titlebar ind-with-tooltip[shown]",
+        "#category-navigator:modal"
+      ]
+    },
+    "hover": "button[value='close'], .ui-dialog-titlebar-close"
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-parent-tooltip",
+    "candidateChecks": {
+      "visible": [
+        ".parent-category-control[shown]",
+        "#category-navigator:modal"
+      ]
+    },
+    "hover": ".navigate-up"
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-breadcrumb-tooltip",
+    "candidateChecks": {
+      "visible": [
+        ".breadcrumbs ind-with-tooltip[shown] >> nth=0",
+        "#category-navigator:modal"
+      ]
+    },
+    "hover": ".breadcrumbs button, .breadcrumbs a"
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "click": ".subcategory .stats-details > summary >> nth=0"
+      }
+    ],
+    "id": "navigator-stats-tooltip",
+    "candidateChecks": {
+      "visible": [
+        ".subcategory .stats-details[open][data-positioned] .stats-details-content >> nth=0",
+        "#category-navigator:modal"
+      ]
+    },
+    "hover": ".subcategory .stats-details > summary, .subcategory .stats.icon-list >> nth=0",
+    "baselineActions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ]
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-stats-icon-no-tooltip",
+    "candidateChecks": {
+      "visible": [
+        ".subcategory .stats .icon-list >> nth=0",
+        "#category-navigator:modal"
+      ],
+      "absent": [
+        ".stats-details[open]"
+      ],
+      "settleMs": 700
+    },
+    "hover": ".subcategory .stats .icon-list, .subcategory .stats.icon-list >> nth=0"
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "fill": {
+          "selector": "input[placeholder='Search']",
+          "text": "Navigator"
+        }
+      },
+      {
+        "waitFor": ".search-results-list .item"
+      }
+    ],
+    "id": "navigator-clear-tooltip",
+    "candidateChecks": {
+      "visible": [
+        ".search ind-with-tooltip[shown]",
+        "#category-navigator:modal"
+      ]
+    },
+    "hover": "button[value='clear-search'], .clearableinput .button-box a"
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-folder-hover",
+    "candidateChecks": {
+      "visible": [
+        ".subcategory .category-drill-button .icon-folder >> nth=0",
+        "#category-navigator:modal"
+      ]
+    },
+    "hover": ".subcategory.js-go-to, .subcategory .category-drill-button >> nth=0"
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorPrivateId}/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#navigate-button"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-protected-tooltip",
+    "candidateChecks": {
+      "visible": [
+        "#category-navigator:modal",
+        ".current-category > .protection"
+      ],
+      "absent": [
+        ".current-category > ind-with-tooltip"
+      ]
+    },
+    "hover": ".current-category .protection"
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/manage/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": ".category-management tr:has-text(\"Navigator source\") .js-move-category"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-category-move",
+    "candidateChecks": {
+      "visible": [
+        "#category-navigator",
+        ".current-category .category-action-button:disabled",
+        "#category-navigator:focus",
+        "#category-navigator:modal"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/manage/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": ".category-management tr:has-text(\"Navigator source\") .js-move-category"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-category-move-disabled-tooltip",
+    "candidateChecks": {
+      "visible": [
+        ".current-category .side-panel ind-with-tooltip[shown]",
+        "#category-navigator:modal"
+      ]
+    },
+    "hover": ".current-category .category-action-button, .current-category:has(.action-button)"
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/manage/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": ".category-management tr:has-text(\"Navigator source\") .js-move-category"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "hover": ".subcategory:has-text(\"Navigator destination\")"
+      },
+      {
+        "click": ".subcategory:has-text(\"Navigator destination\") :is(.category-action-button, .action-button)"
+      },
+      {
+        "waitFor": ".ui-dialog:has-text(\"Confirm action\")"
+      }
+    ],
+    "id": "navigator-category-move-confirm",
+    "candidateChecks": {
+      "visible": [
+        ".ui-dialog:has-text(\"Confirm action\")"
+      ],
+      "hidden": [
+        "#category-navigator"
+      ],
+      "clickable": [
+        ".ui-dialog:has-text(\"Confirm action\") button:has-text(\"Cancel\")"
+      ]
+    },
+    "candidateAfterActions": [
+      {
+        "click": ".ui-dialog:has-text(\"Confirm action\") button:has-text(\"Cancel\")"
+      },
+      {
+        "waitFor": "#category-navigator:focus"
+      }
+    ]
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/manage/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": ".category-management tr:has-text(\"Navigator source\") .js-move-category"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "click": ".subcategory.js-go-to:has-text(\"Navigator source\"), .category-drill-button:has-text(\"Navigator source\")"
+      }
+    ],
+    "id": "navigator-category-move-descendant",
+    "candidateChecks": {
+      "visible": [
+        ".subcategory .category-action-button:disabled",
+        ".current-category .category-action-button:disabled",
+        "#category-navigator:modal",
+        ".subcategory ind-with-tooltip .category-action-button:disabled"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/manage/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "input[name='category_id'] >> nth=0"
+      },
+      {
+        "click": "input[name='category_id'] >> nth=1"
+      },
+      {
+        "click": ".js-bulk-move-category"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-category-bulk-move",
+    "candidateChecks": {
+      "visible": [
+        "#category-navigator",
+        "#category-navigator:focus",
+        "#category-navigator:modal"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/event/{conferenceEventId}/manage/",
+    "personas": [
+      "manager"
+    ],
+    "actions": [
+      {
+        "click": "#event-action-menu-actions-target"
+      },
+      {
+        "click": "[title='Move event to another category'] >> nth=0"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-event-move",
+    "candidateChecks": {
+      "visible": [
+        "#category-navigator",
+        ".current-category .category-action-button:disabled",
+        "#category-navigator:focus",
+        "#category-navigator:modal"
+      ],
+      "absent": [
+        ".placeholder-actions button:has-text(\"select\")"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/event/{conferenceEventId}/manage/",
+    "personas": [
+      "manager"
+    ],
+    "actions": [
+      {
+        "click": "#event-action-menu-actions-target"
+      },
+      {
+        "click": "[title='Move event to another category'] >> nth=0"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-event-move-disabled-tooltip",
+    "candidateChecks": {
+      "visible": [
+        ".current-category .side-panel ind-with-tooltip[shown]",
+        "#category-navigator:modal"
+      ],
+      "absent": [
+        ".placeholder-actions button:has-text(\"select\")"
+      ]
+    },
+    "hover": ".current-category .category-action-button, .current-category:has(.action-button)"
+  },
+  {
+    "module": "category-navigator",
+    "path": "/event/{conferenceEventId}/manage/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#event-action-menu-actions-target"
+      },
+      {
+        "click": "[title='Move event to another category'] >> nth=0"
+      },
+      {
+        "waitFor": ".current-category"
+      },
+      {
+        "click": ".navigate-up"
+      },
+      {
+        "hover": ".subcategory:has-text(\"Navigator fixtures\")"
+      },
+      {
+        "click": ".subcategory:has-text(\"Navigator fixtures\") :is(.category-action-button, .action-button)"
+      },
+      {
+        "waitFor": ".ui.modal:has-text(\"Confirm event move\")"
+      }
+    ],
+    "id": "navigator-event-move-confirm",
+    "candidateChecks": {
+      "visible": [
+        ".ui.modal:has-text(\"Confirm event move\")"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{childCategoryId}/manage/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "input[name='event_id'] >> nth=0"
+      },
+      {
+        "click": "#js-move-events-to-subcategory-container .icon-transmission"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-event-bulk-move",
+    "candidateChecks": {
+      "visible": [
+        "#category-navigator",
+        "#category-navigator:focus",
+        "#category-navigator:modal"
+      ],
+      "absent": [
+        ".placeholder-actions button:has-text(\"select\")"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/event/{regformEventId}/manage/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "[title='Publish event to a category']"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-event-publish",
+    "candidateChecks": {
+      "visible": [
+        "#category-navigator",
+        "#category-navigator:focus",
+        "#category-navigator:modal"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/#create-event:lecture",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "#categorynav-button-event-creation-category"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-creation-picker",
+    "candidateChecks": {
+      "visible": [
+        "#category-navigator",
+        "#category-navigator:focus",
+        "#category-navigator:modal"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/event/{conferenceEventId}/manage/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "button[data-ajax-dialog][title=\"Clone event\"]"
+      },
+      {
+        "click": "input[name='repeatability'][value='once']"
+      },
+      {
+        "click": "button[name='step'][value='2']"
+      },
+      {
+        "click": "button[name='step'][value='3']"
+      },
+      {
+        "click": "#categorynav-button-category"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-clone-picker",
+    "candidateChecks": {
+      "visible": [
+        "#category-navigator",
+        "#category-navigator:focus",
+        "#category-navigator:modal"
+      ]
+    }
+  },
+  {
+    "module": "category-navigator",
+    "path": "/category/{navigatorParentId}/manage/designer/",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": "[data-href$='/clone'] >> nth=0"
+      },
+      {
+        "click": "#categorynav-button-category"
+      },
+      {
+        "waitFor": ".current-category"
+      }
+    ],
+    "id": "navigator-template-picker",
+    "candidateChecks": {
+      "visible": [
+        "#category-navigator",
+        "#category-navigator:focus",
+        "#category-navigator:modal"
+      ]
+    }
   }
 ]

@@ -1,0 +1,18 @@
+# Headless screen reader for the regression suite: Orca reads Chromium on a virtual display.
+# Speech goes to a silent audio driver; the words are taken from Orca's debug log.
+FROM mcr.microsoft.com/playwright:v1.59.1-noble
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      orca xvfb openbox xdotool dbus-x11 at-spi2-core python3-pyatspi gir1.2-atspi-2.0 \
+      speech-dispatcher speech-dispatcher-espeak-ng espeak-ng libao4 gsettings-desktop-schemas \
+ && rm -rf /var/lib/apt/lists/*
+
+# No sound card in the container: without the null driver speech-dispatcher blocks and Orca hangs
+RUN printf 'default_driver=null\n' > /etc/libao.conf \
+ && printf 'AudioOutputMethod "libao"\nDefaultModule espeak-ng\n' >> /etc/speech-dispatcher/speechd.conf
+
+WORKDIR /opt/screenreader
+RUN npm init -y >/dev/null && npm install --no-audit --no-fund playwright@1.59.1
+ENV NODE_PATH=/opt/screenreader/node_modules

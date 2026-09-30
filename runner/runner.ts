@@ -1,4 +1,4 @@
-import {Browser, BrowserType, chromium, firefox, Page} from '@playwright/test';
+import {Browser, BrowserType, chromium, expect, firefox, Page} from '@playwright/test';
 import {execSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
@@ -37,9 +37,9 @@ interface PageAction {
   fill?: {selector: string; text: string};
   // Press `key` until `selector` matches (e.g. a "...:focus" selector), up to
   // `max` times. Robust to tab-order changes: it targets a specific element
-  // instead of a fixed count. Gives up quietly after `max` presses and captures
-  // whatever state resulted, so a control that is not yet reachable (the "before"
-  // of a focusability fix) still yields a baseline.
+  // instead of a fixed count. Checked scenarios fail if the target is not reached;
+  // older unchecked scenarios retain the fallback capture behavior. Use explicit
+  // baselineActions/baselineChecks for controls that were not focusable before.
   pressUntil?: {key: string; selector: string; max?: number};
   waitFor?: string;
 }
@@ -54,15 +54,30 @@ interface PageEntry {
   waitFor?: string;
   mask?: string[];
   actions?: PageAction[];
+  baselineActions?: PageAction[];
+  baselineChecks?: PageEntry['candidateChecks'];
   // Hover state to capture. Unlike `actions` (applied before stabilisation),
   // the hover is (re)applied inside capture() after waitForStable parks the
   // cursor off-screen — otherwise the parked cursor would clear it. Lets a
   // hover-revealed UI (e.g. a tooltip) be a page in its own right.
   hover?: string;
   hoverWaitFor?: string;
+  // Candidate-only assertions: master may intentionally lack the fixed state.
+  candidateChecks?: {
+    visible?: string[];
+    hidden?: string[];
+    absent?: string[];
+    clickable?: string[];
+    settleMs?: number;
+  };
+  candidateAfterActions?: PageAction[];
 }
 
-async function runActions(page: Page, actions: PageAction[] | undefined): Promise<void> {
+async function runActions(
+  page: Page,
+  actions: PageAction[] | undefined,
+  failOnMiss = false,
+): Promise<void> {
   if (!actions) return;
   // Actions run before waitForStable, i.e. potentially before web/icon fonts have
   // loaded. A click that opens JS-positioned UI (e.g. the jQuery i-dropdown, whose
@@ -95,6 +110,9 @@ async function runActions(page: Page, actions: PageAction[] | undefined): Promis
         }
       }
       if (!matched) {
+        if (failOnMiss) {
+          throw new Error(`Focus target ${selector} not reached after ${max} ${key} presses`);
+        }
         console.warn(
           `  pressUntil: ${selector} not matched after ${max} ${key} presses ` +
             '(capturing current state)'
@@ -244,6 +262,7 @@ async function capture(
   page: Page,
   pageEntry: PageEntry,
   withA11y: boolean,
+  checkCandidate: boolean,
 ): Promise<{image: Buffer; width: number; height: number; tree: any | undefined}> {
   await waitForStable(page);
   // Apply any hover *after* stabilisation: waitForStable parks the cursor
@@ -262,6 +281,24 @@ async function capture(
       console.warn(`  hover step failed for ${pageEntry.id}: ${String(err)}`);
     }
   }
+  const checks = checkCandidate ? pageEntry.candidateChecks : pageEntry.baselineChecks;
+  if (checks) {
+    if (checks.settleMs) {
+      await page.waitForTimeout(checks.settleMs);
+    }
+    for (const selector of checks.visible ?? []) {
+      await expect(page.locator(selector)).toBeVisible();
+    }
+    for (const selector of checks.hidden ?? []) {
+      await expect(page.locator(selector)).toBeHidden();
+    }
+    for (const selector of checks.absent ?? []) {
+      await expect(page.locator(selector)).toHaveCount(0);
+    }
+    for (const selector of checks.clickable ?? []) {
+      await page.locator(selector).click({trial: true});
+    }
+  }
   const mask = (pageEntry.mask ?? []).map(sel => page.locator(sel));
   const image = await page.screenshot({
     fullPage: pageEntry.fullPage ?? true,
@@ -272,6 +309,9 @@ async function capture(
   // captureA11yTree uses CDP, which is chromium-only. Callers gate withA11y
   // accordingly — firefox / webkit should always pass false.
   const tree = withA11y ? await captureA11yTree(page) : undefined;
+  if (checkCandidate) {
+    await runActions(page, pageEntry.candidateAfterActions);
+  }
   return {image, width, height, tree};
 }
 
@@ -324,6 +364,7 @@ async function main() {
     newVisual: 0, changedVisual: 0,
     newA11y:   0, changedA11y:   0,
   };
+  let failedChecks = 0;
 
   for (const browserName of browsers) {
     // A11y is captured in chromium only — firefox has no CDP-equivalent for
@@ -379,6 +420,7 @@ async function main() {
             await page.goto(url, {waitUntil: 'domcontentloaded', timeout: 30_000});
           } catch (err) {
             console.error(`  navigate failed: ${String(err)}`);
+            if (entry.candidateChecks) failedChecks++;
             continue;
           }
 
@@ -387,13 +429,24 @@ async function main() {
           // browser run — which would silently skip baselines for every page
           // after it.
           try {
-            await runActions(page, entry.actions);
+            const actions = updateBaselines || onlyMissing
+              ? entry.baselineActions ?? entry.actions
+              : entry.actions;
+            await runActions(page, actions, Boolean(entry.candidateChecks || entry.baselineChecks));
           } catch (err) {
+            if (entry.candidateChecks) failedChecks++;
             console.warn(`  actions failed for ${entry.id}: ${String(err)} — skipping page`);
             continue;
           }
 
-          const captured = await capture(page, entry, doA11y);
+          let captured;
+          try {
+            captured = await capture(page, entry, doA11y, !updateBaselines && !onlyMissing);
+          } catch (err) {
+            failedChecks++;
+            console.error(`  capture failed for ${entry.id}: ${String(err)}`);
+            continue;
+          }
 
           if (doVisual) {
             if (updateBaselines || onlyMissing) {
@@ -485,6 +538,10 @@ async function main() {
     console.log(`  a11y  : ${counts.changedA11y} changed, ${counts.newA11y} new`);
   }
 
+  if (failedChecks) {
+    console.error(`  failed checks: ${failedChecks}`);
+    process.exit(2);
+  }
   if (updateBaselines || onlyMissing) process.exit(0);
   const openDiffs = counts.changedVisual + counts.newVisual + counts.changedA11y + counts.newA11y;
   process.exit(openDiffs > 0 ? 3 : 0);

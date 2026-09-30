@@ -26,6 +26,7 @@ from seed.context import SeedContext  # noqa: E402
 from seed.scenarios import (  # noqa: E402
     _common,
     abstract_list,
+    category_navigator,
     dashboard_listing,
     dashboard_roles,
     events_display,
@@ -68,6 +69,9 @@ def main():
         db.session.commit()
         sys.stderr.write('[seed] running regform_required_field\n')
         regform_required_field.seed(ctx)
+        db.session.commit()
+        sys.stderr.write('[seed] running category_navigator\n')
+        category_navigator.seed(ctx)
         db.session.commit()
         ctx.write_manifest()
     sys.stderr.write('[seed] complete\n')
