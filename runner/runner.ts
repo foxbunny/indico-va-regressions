@@ -90,8 +90,8 @@ async function runActions(
     // "Configure field" button, which is visibility:hidden until its row is
     // hovered). The cursor stays parked on the hovered element, so a following
     // click on the now-visible control keeps the reveal active.
-    if (action.hover) await page.hover(action.hover, {timeout: 5_000});
-    if (action.click) await page.click(action.click, {timeout: 5_000});
+    if (action.hover) await page.hover(action.hover, {timeout: 15_000});
+    if (action.click) await page.click(action.click, {timeout: 15_000});
     if (action.fill) await page.fill(action.fill.selector, action.fill.text);
     // A real keyboard press (e.g. "Tab") — the only way to reach a keyboard-only
     // state such as :focus-visible, which a mouse click or programmatic .focus()
