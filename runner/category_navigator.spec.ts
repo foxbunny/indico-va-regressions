@@ -248,3 +248,26 @@ test('Escape closes the navigator while the close tooltip is shown', async ({pag
   await expect(dialog).toHaveCount(0);
   await expect(page.locator('#navigate-button')).toBeFocused();
 });
+
+for (const status of [403, 500]) {
+  test(`search HTTP ${status} does not report zero matches`, async ({page}) => {
+    await page.goto(`/category/${manifest.navigatorParentId}/`);
+    await page.locator('#navigate-button').click();
+    await page.route(
+      url => url.pathname === '/category/search' && url.searchParams.get('q') === 'Navigator',
+      route =>
+        route.fulfill({
+          status,
+          contentType: 'application/json',
+          body: JSON.stringify({error: {title: `Injected ${status}`, message: 'probe'}}),
+        })
+    );
+    const response = page.waitForResponse(
+      res => new URL(res.url()).pathname === '/category/search' && res.status() === status
+    );
+    await page.locator("input[placeholder='Search']").fill('Navigator');
+    await response;
+    await expect(page.getByText(`Injected ${status}`)).toBeVisible();
+    await expect(page.getByText("Your search doesn't match any category")).toHaveCount(0);
+  });
+}
