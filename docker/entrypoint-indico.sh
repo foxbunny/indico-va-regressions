@@ -33,6 +33,11 @@ python /regressions/hooks/run_indico.py db prepare
 echo "[entrypoint-indico] seeding scenarios"
 PYTHONPATH=/regressions python -m seed
 
+echo "[entrypoint-indico] starting local SMTP capture"
+: > /regressions/output/mail.log
+python -u -m aiosmtpd -n -l 127.0.0.1:1025 > /regressions/output/mail.log 2>&1 &
+sleep 1
+
 echo "[entrypoint-indico] starting dev server on 0.0.0.0:8000"
 exec python /regressions/hooks/run_indico.py run \
   -q -h 0.0.0.0 -p 8000 -u "http://indico:8000" --reloader none

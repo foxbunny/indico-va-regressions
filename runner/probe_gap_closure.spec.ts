@@ -96,6 +96,59 @@ test('public widget deferred onAction boundary', async ({browser}, testInfo) => 
   await ctx.close();
 });
 
+test('public widget rejected onAction boundary', async ({browser}, testInfo) => {
+  const rec = new Recorder('rejected-widget-action', testInfo);
+  const {ctx, page} = await newCtx(browser, 'admin');
+  rec.watch(page);
+  await page.goto(`/category/${manifest.navigatorParentId}/`);
+  await rec.step('open', async () => {
+    await page.evaluate(category => {
+      (window as any).__rejectProbe = {events: []};
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      (window as any).jQuery(host).categorynavigator({
+        category,
+        openInDialog: true,
+        onAction(selected) {
+          (window as any).__rejectProbe.events.push(`callback:${selected.id}`);
+          const deferred = (window as any).jQuery.Deferred();
+          (window as any).__rejectProbe.deferred = deferred;
+          return deferred.promise();
+        },
+      });
+    }, manifest.navigatorParentId);
+    await page.locator('.categorynav:visible .current-category').first().waitFor();
+    return page.evaluate(() => ({events: (window as any).__rejectProbe.events}));
+  });
+  await rec.step('selection', async () => {
+    const row = treeRow(page, 'Navigator destination');
+    await row.hover();
+    await row.locator(ACTION).first().click();
+    await page.waitForTimeout(200);
+    return page.evaluate(() => ({
+      events: [...(window as any).__rejectProbe.events],
+      deferredState: (window as any).__rejectProbe.deferred?.state(),
+      navigatorVisible: [...document.querySelectorAll('.categorynav')].some(el =>
+        (el as HTMLElement).getBoundingClientRect().width > 0),
+    }));
+  });
+  await rec.step('reject', async () => {
+    await page.evaluate(() => {
+      (window as any).__rejectProbe.events.push('reject');
+      (window as any).__rejectProbe.deferred?.reject('probe-rejection');
+    });
+    await page.waitForTimeout(500);
+    return page.evaluate(() => ({
+      events: [...(window as any).__rejectProbe.events],
+      deferredState: (window as any).__rejectProbe.deferred?.state(),
+      navigatorVisible: [...document.querySelectorAll('.categorynav')].some(el =>
+        (el as HTMLElement).getBoundingClientRect().width > 0),
+    }));
+  });
+  rec.flush();
+  await ctx.close();
+});
+
 test('role access and real denied management routes', async ({browser}, testInfo) => {
   const rec = new Recorder('role-authorization-matrix', testInfo);
   for (const persona of ['anonymous', 'participant', 'manager', 'admin'] as const) {
@@ -151,6 +204,42 @@ test('bulk event move confirmed result', async ({browser}, testInfo) => {
     await prompt.getByRole('button', {name: /Confirm|OK|Yes|Move/}).first().click();
     await page.waitForTimeout(2500);
     return {promptText, url: page.url(), posts, bodyText: (await page.locator('body').innerText()).slice(0, 300)};
+  });
+  rec.flush();
+  await ctx.close();
+});
+
+test('bulk category move confirmed result', async ({browser}, testInfo) => {
+  const rec = new Recorder('bulk-category-move-submit', testInfo);
+  const {ctx, page} = await newCtx(browser, 'admin');
+  rec.watch(page);
+  const posts = [];
+  page.on('response', response => {
+    if (response.request().method() === 'POST' && !response.url().includes('info-from')) {
+      posts.push({url: response.url(), status: response.status(), body: response.request().postData()});
+    }
+  });
+  await rec.step('open', async () => {
+    await page.goto(`/category/${manifest.navigatorParentId}/manage/`);
+    for (const name of ['Navigator source', 'Navigator private']) {
+      await page.locator(`.category-management tr:has-text("${name}") input[name='category_id']`).first().click();
+    }
+    await page.locator('.js-bulk-move-category').click();
+    await page.locator('.current-category').first().waitFor();
+    return {selected: ['Navigator source', 'Navigator private'],
+      title: await page.locator('.current-category .title').first().innerText()};
+  });
+  await rec.step('confirm', async () => {
+    const row = treeRow(page, 'Navigator destination');
+    await row.hover();
+    await row.locator(ACTION).first().click();
+    const modal = page.locator('.ui.modal:visible');
+    const prompt = await modal.count() ? modal : page.locator('.ui-dialog:visible').last();
+    const promptText = await prompt.innerText().catch(() => '');
+    await prompt.getByRole('button', {name: /Confirm|OK|Yes|Move/}).first().click();
+    await page.waitForTimeout(2500);
+    return {promptText, url: page.url(), posts,
+      bodyText: (await page.locator('body').innerText()).slice(0, 300)};
   });
   rec.flush();
   await ctx.close();
