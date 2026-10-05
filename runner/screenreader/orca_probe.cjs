@@ -40,6 +40,19 @@ const scenarios = {
     open: '.category-management tr:has-text("Navigator source") .js-move-category',
     keys: [...repeat('Tab', 12), 'Escape'],
   },
+  'display-search': {
+    persona: 'anonymous',
+    path: `/category/${manifest.navigatorParentId}/`,
+    open: '#navigate-button',
+    // Focus starts on the dialog; two Tabs reach the search field in both revisions.
+    keys: ['Tab', 'Tab', 'N', 'a', 'v', 'i', 'g', 'a', 't', 'o', 'r', 'Tab', 'Down', 'Down', 'Escape'],
+  },
+  'display-search-empty': {
+    persona: 'anonymous',
+    path: `/category/${manifest.navigatorParentId}/`,
+    open: '#navigate-button',
+    keys: ['Tab', 'Tab', 'x', 'x', 'x', 'x', 'Tab', 'Down', 'Escape'],
+  },
 };
 
 function xdo(...xargs) {

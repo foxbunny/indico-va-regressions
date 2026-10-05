@@ -49,11 +49,42 @@ const entryPoints = [
       await page.locator('.search-results-list .item').first().waitFor();
     },
   },
+  {
+    name: 'display-search-empty',
+    open: async page => {
+      await page.goto(`/category/${manifest.navigatorParentId}/`);
+      await page.locator('#navigate-button').click();
+      await page.locator("input[placeholder='Search']").fill('NonExistentCategoryQuery');
+      await page.locator('.categorynav .placeholder:visible').first().waitFor();
+    },
+  },
+  {
+    name: 'event-move',
+    open: async page => {
+      await page.goto(`/event/${manifest.conferenceEventId}/manage/`);
+      await page.locator('#event-action-menu-actions-target').click();
+      await page.locator("[title='Move event to another category']").first().click();
+    },
+  },
+  {
+    name: 'protected-category',
+    open: async page => {
+      await page.goto(`/category/${manifest.navigatorPrivateId}/`);
+      await page.locator('#navigate-button').click();
+    },
+  },
+  {
+    name: 'creation-picker',
+    open: async page => {
+      await page.goto('/#create-event:lecture');
+      await page.locator('#categorynav-button-event-creation-category').click();
+    },
+  },
 ];
 
 async function openNavigator(page, entry) {
   await entry.open(page);
-  if (entry.name !== 'display-search') {
+  if (!entry.name.startsWith('display-search')) {
     await page.locator('.current-category').first().waitFor();
   }
   await page.evaluate(() => document.fonts.ready);
