@@ -40,22 +40,33 @@ const entryPoints = [
       await page.locator('.category-management tr:has-text("Navigator source") .js-move-category').click();
     },
   },
+  {
+    name: 'display-search',
+    open: async page => {
+      await page.goto(`/category/${manifest.navigatorParentId}/`);
+      await page.locator('#navigate-button').click();
+      await page.locator("input[placeholder='Search']").fill('Navigator');
+      await page.locator('.search-results-list .item').first().waitFor();
+    },
+  },
 ];
 
 async function openNavigator(page, entry) {
   await entry.open(page);
-  await page.locator('.current-category').first().waitFor();
+  if (entry.name !== 'display-search') {
+    await page.locator('.current-category').first().waitFor();
+  }
   await page.evaluate(() => document.fonts.ready);
   await waitForStable(page);
 }
 
 for (const entry of entryPoints) {
-  test(`aria and role attributes inside the navigator (${entry.name})`, async ({page}, testInfo) => {
+  test(`semantic attributes and tooltip structure (${entry.name})`, async ({page}, testInfo) => {
     await openNavigator(page, entry);
-    const attributes = await page.evaluate(() => {
+    const snapshot = await page.evaluate(() => {
       const root = (window as any).__findNavigator();
       const elements = [root, ...root.querySelectorAll('*')];
-      return elements.flatMap(el =>
+      const attributes = elements.flatMap(el =>
         [...el.attributes]
           .filter(attr => attr.name === 'role' || attr.name.startsWith('aria-'))
           .map(attr => ({
@@ -68,8 +79,21 @@ for (const entry of entryPoints) {
               : null,
           }))
       );
+      const titles = elements
+        .filter(el => el.hasAttribute('title'))
+        .map(el => ({tag: el.tagName.toLowerCase(), title: el.getAttribute('title')}));
+      const tooltips = [...root.querySelectorAll('ind-with-tooltip')].map(host => {
+        const control = host.querySelector('button, a, label');
+        return {
+          controlTag: control?.tagName.toLowerCase() ?? null,
+          controlIsChild: Boolean(control && control.parentElement === host),
+          tipInsideControl: Boolean(control?.querySelector('[data-tip-content]')),
+          text: control?.querySelector('[data-tip-content]')?.textContent?.trim() ?? null,
+        };
+      });
+      return {attributes, titles, tooltips};
     });
-    const result = {entry: entry.name, browser: testInfo.project.use.browserName, attributes};
+    const result = {entry: entry.name, browser: testInfo.project.use.browserName, ...snapshot};
     console.log(`AUDIT-ARIA ${JSON.stringify(result)}`);
     await testInfo.attach('aria-attributes', {body: JSON.stringify(result, null, 2), contentType: 'application/json'});
   });

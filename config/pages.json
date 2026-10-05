@@ -156,8 +156,7 @@
     "personas": [
       "manager"
     ],
-    "hover": "#dashboard-calendar-link ind-with-tooltip",
-    "hoverWaitFor": "#dashboard-calendar-link ind-with-tooltip[shown]"
+    "hover": "#dashboard-calendar-link button"
   },
   {
     "id": "user-dashboard-export-popup",
@@ -460,8 +459,7 @@
     "personas": [
       "anonymous"
     ],
-    "hover": "ind-share-widget img >> nth=0",
-    "hoverWaitFor": "ind-share-widget ind-with-tooltip[shown]"
+    "hover": "ind-share-widget img >> nth=0"
   },
   {
     "id": "event-meeting-display-share-popup",
@@ -797,8 +795,7 @@
         "waitFor": "#person-link-field-person_link_data .ui.buttons"
       }
     ],
-    "hover": "#person-link-field-person_link_data ind-with-tooltip:has(i.sort)",
-    "hoverWaitFor": "#person-link-field-person_link_data ind-with-tooltip:has(i.sort)[shown]"
+    "hover": "#person-link-field-person_link_data button:has(i.sort)"
   },
   {
     "id": "event-persons-inline-form-tooltip-role",
@@ -815,8 +812,8 @@
         "waitFor": "#person-link-field-person_link_data .ui.buttons"
       }
     ],
-    "hover": "#person-link-field-person_link_data ind-with-tooltip:has(i.paperclip)",
-    "hoverWaitFor": "#person-link-field-person_link_data ind-with-tooltip:has(i.paperclip)[shown]"
+    "hover": "#person-link-field-person_link_data a:has(i.paperclip)",
+    "hoverWaitFor": ".ui.popup:visible"
   },
   {
     "id": "event-persons-inline-form-tooltip-edit",
@@ -833,8 +830,7 @@
         "waitFor": "#person-link-field-person_link_data .ui.buttons"
       }
     ],
-    "hover": "#person-link-field-person_link_data ind-with-tooltip:has(i.pencil)",
-    "hoverWaitFor": "#person-link-field-person_link_data ind-with-tooltip:has(i.pencil)[shown]"
+    "hover": "#person-link-field-person_link_data i.pencil"
   },
   {
     "id": "event-persons-inline-form-tooltip-delete",
@@ -851,8 +847,7 @@
         "waitFor": "#person-link-field-person_link_data .ui.buttons"
       }
     ],
-    "hover": "#person-link-field-person_link_data ind-with-tooltip:has(i.remove)",
-    "hoverWaitFor": "#person-link-field-person_link_data ind-with-tooltip:has(i.remove)[shown]"
+    "hover": "#person-link-field-person_link_data i.remove"
   },
   {
     "id": "event-ics-session-display",
