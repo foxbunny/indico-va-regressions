@@ -50,8 +50,10 @@ def _create_event(*, category, event_type, data, creator):
 def seed(ctx):
     from flask import session
 
+    from indico.core.db import db
     from indico.modules.categories.operations import create_category
     from indico.modules.events.models.events import EventType
+    from indico.modules.events.models.references import ReferenceType
 
     admin = ctx.get('admin')
     manager = ctx.get('manager')
@@ -59,6 +61,7 @@ def seed(ctx):
 
     with ctx.app.test_request_context():
         session.set_session_user(admin)
+        db.session.add(ReferenceType(name='Visual regression reference'))
 
         child = create_category(root, {
             'title': 'Visual Regression — Child Category',

@@ -625,6 +625,182 @@
     ]
   },
   {
+    "id": "admin-upcoming-events",
+    "module": "admin",
+    "path": "/admin/upcoming-events",
+    "personas": [
+      "admin"
+    ]
+  },
+  {
+    "id": "admin-upcoming-events-required-error",
+    "module": "admin",
+    "path": "/admin/upcoming-events",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": ".multiple-items-widget .js-save-row"
+      }
+    ],
+    "candidateChecks": {
+      "visible": [
+        ".multiple-items-widget .table-input-error >> nth=0"
+      ],
+      "absent": [
+        ".qtip-danger"
+      ]
+    }
+  },
+  {
+    "id": "admin-upcoming-events-saved-row",
+    "module": "admin",
+    "path": "/admin/upcoming-events",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": ".multiple-items-widget .js-save-row"
+      },
+      {
+        "click": ".multiple-items-widget select.js-table-input"
+      },
+      {
+        "press": "ArrowDown"
+      },
+      {
+        "press": "Tab"
+      },
+      {
+        "fill": {
+          "selector": ".multiple-items-widget input[type=number] >> nth=0",
+          "text": "1"
+        }
+      },
+      {
+        "fill": {
+          "selector": ".multiple-items-widget input[type=number] >> nth=1",
+          "text": "3"
+        }
+      },
+      {
+        "fill": {
+          "selector": ".multiple-items-widget input[type=number] >> nth=2",
+          "text": "1"
+        }
+      },
+      {
+        "click": ".multiple-items-widget .js-save-row"
+      }
+    ],
+    "baselineChecks": {
+      "clickable": [
+        "form input[type=submit]"
+      ]
+    },
+    "candidateChecks": {
+      "visible": [
+        ".multiple-items-widget .js-edit-row"
+      ],
+      "absent": [
+        ".multiple-items-widget .table-input-error"
+      ],
+      "clickable": [
+        "form input[type=submit]"
+      ]
+    }
+  },
+  {
+    "id": "admin-upcoming-events-save-focus",
+    "module": "admin",
+    "path": "/admin/upcoming-events",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": ".multiple-items-widget select.js-table-input"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": ".multiple-items-widget .js-save-row:focus",
+          "max": 8
+        }
+      }
+    ],
+    "baselineChecks": {
+      "visible": [
+        ".multiple-items-widget .js-save-row:focus"
+      ]
+    },
+    "candidateChecks": {
+      "visible": [
+        ".multiple-items-widget .js-save-row:focus"
+      ]
+    }
+  },
+  {
+    "id": "admin-upcoming-events-keyboard-error",
+    "module": "admin",
+    "path": "/admin/upcoming-events",
+    "personas": [
+      "admin"
+    ],
+    "actions": [
+      {
+        "click": ".multiple-items-widget select.js-table-input"
+      },
+      {
+        "pressUntil": {
+          "key": "Tab",
+          "selector": ".multiple-items-widget .js-save-row:focus",
+          "max": 8
+        }
+      },
+      {
+        "press": "Enter"
+      }
+    ],
+    "baselineChecks": {
+      "visible": [
+        ".multiple-items-widget .js-save-row:focus"
+      ]
+    },
+    "candidateChecks": {
+      "visible": [
+        ".multiple-items-widget .table-input-error >> nth=0",
+        ".multiple-items-widget select.js-table-input:focus"
+      ]
+    }
+  },
+  {
+    "id": "event-meeting-reference-required-error",
+    "module": "events",
+    "path": "/event/{meetingEventId}/manage/",
+    "personas": [
+      "manager"
+    ],
+    "actions": [
+      {
+        "click": "#event-settings-classification button[data-ajax-form]"
+      },
+      {
+        "waitFor": "#event-settings-classification .multiple-items-widget .js-save-row"
+      },
+      {
+        "click": "#event-settings-classification .js-save-row"
+      }
+    ],
+    "candidateChecks": {
+      "visible": [
+        "#event-settings-classification .table-input-error >> nth=0"
+      ]
+    }
+  },
+  {
     "id": "admin-users",
     "module": "admin",
     "path": "/admin/users/",
